@@ -24,11 +24,22 @@ the ground up for **large datasets** ("packed" series files), **batch processing
 
 ## Status
 
-**Phase 0 — project scaffold.** Development has started; nothing statistically useful yet.
+**Phase 1 in progress.** Working today:
+
+- **Packed series layout** (one series per row, values in a single cell) and the classic
+  ProUCL **long layout** (CSV/TSV and `.xlsx`, with nondetect flag and detection-limit
+  columns, optional group column)
+- Batch **descriptive statistics** per series (thousands of series per file, streamed)
+- **Goodness-of-fit**: Shapiro-Wilk (Royston 1995, AS R94, n ≤ 5000) and Lilliefors
+  K-S, for normality and lognormality, with the ProUCL-style combined conclusion
+- CLI: `openucl summary`, `openucl gof`
+- Avalonia GUI shell (menus laid out, modules coming online phase by phase)
+
+Coming next: ROS imputation of nondetects, gamma GOF, UCLs/EPCs, hypothesis tests, graphs.
 
 Roadmap:
 
-1. Repository, CI, license, validation harness against ProUCL 5.2 outputs
+1. ~~Repository, CI, license~~ ✅ — plus validation harness against ProUCL 5.2 outputs (in progress)
 2. Data engine (packed + long format + XLSX/CSV) and descriptive statistics, GOF tests
 3. UCLs/EPCs (all ProUCL methods, with and without nondetects) + UTLs/UPLs/USLs
 4. Outlier, hypothesis, ANOVA and trend tests

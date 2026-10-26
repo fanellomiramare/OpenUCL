@@ -8,4 +8,8 @@
     <InternalsVisibleTo Include="OpenUCL.Tests" />
   </ItemGroup>
 
+  <ItemGroup>
+    <PackageReference Include="MiniExcel" Version="1.*" />
+  </ItemGroup>
+
 </Project>
