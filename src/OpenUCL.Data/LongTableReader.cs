@@ -21,9 +21,10 @@ public static class LongTableReader
     public static LongTable ReadTable(string path, LongTableReadOptions? options = null)
     {
         var opts = options ?? new LongTableReadOptions();
-        return Path.GetExtension(path) switch
+        return Path.GetExtension(path).ToLowerInvariant() switch
         {
             ".xlsx" or ".xlsm" => ReadXlsx(path),
+            ".xls" => ReadLegacyXls(path),
             _ => ReadCsv(path, opts),
         };
     }
@@ -152,6 +153,47 @@ public static class LongTableReader
                 cells[i] = cell;
             }
             rows.Add(cells);
+        }
+        return new LongTable(columns, rows);
+    }
+
+    private static bool _encodingProviderRegistered;
+
+    /// <summary>
+    /// Reads legacy .xls (BIFF) files via ExcelDataReader: first worksheet, first row as header.
+    /// Needed to open the sample datasets shipped with ProUCL.
+    /// </summary>
+    private static LongTable ReadLegacyXls(string path)
+    {
+        if (!_encodingProviderRegistered)
+        {
+            // ExcelDataReader needs codepage 1252 for legacy BIFF strings.
+            System.Text.Encoding.RegisterProvider(System.Text.CodePagesEncodingProvider.Instance);
+            _encodingProviderRegistered = true;
+        }
+
+        using var stream = File.Open(path, FileMode.Open, FileAccess.Read);
+        using var reader = ExcelDataReader.ExcelReaderFactory.CreateReader(stream);
+        if (!reader.Read()) return new LongTable(Array.Empty<string>(), Array.Empty<object?[]>());
+
+        var columns = new List<string>();
+        for (int i = 0; i < reader.FieldCount; i++)
+        {
+            var name = reader.GetValue(i)?.ToString()?.Trim();
+            columns.Add(string.IsNullOrWhiteSpace(name) ? $"V{i + 1}" : name!);
+        }
+
+        var rows = new List<object?[]>();
+        while (reader.Read())
+        {
+            var cells = new object?[columns.Count];
+            bool any = false;
+            for (int i = 0; i < columns.Count && i < reader.FieldCount; i++)
+            {
+                cells[i] = NormalizeCell(reader.GetValue(i));
+                if (cells[i] is not null) any = true;
+            }
+            if (any) rows.Add(cells);
         }
         return new LongTable(columns, rows);
     }

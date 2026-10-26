@@ -31,11 +31,16 @@ the ground up for **large datasets** ("packed" series files), **batch processing
   columns, optional group column)
 - Batch **descriptive statistics** per series (thousands of series per file, streamed)
 - **Goodness-of-fit**: Shapiro-Wilk (Royston 1995, AS R94, n ≤ 5000) and Lilliefors
-  K-S, for normality and lognormality, with the ProUCL-style combined conclusion
-- CLI: `openucl summary`, `openucl gof`
+  K-S, for normality and lognormality, with the ProUCL-style combined conclusion;
+  **gamma EDF tests** (Anderson-Darling A² and K-S D) with the Singh, Singh and Iaci
+  critical-value tables from the ProUCL 5.2 Technical Guide Appendix A, plus gamma
+  MLE fitting (k̂, θ̂) with the bias-corrected k*, θ* used by ProUCL
+- **Legacy `.xls` reading** (ExcelDataReader): the sample datasets shipped with
+  ProUCL open directly
+- CLI: `openucl summary`, `openucl gof` (`--lognormal`, `--gamma`)
 - Avalonia GUI shell (menus laid out, modules coming online phase by phase)
 
-Coming next: ROS imputation of nondetects, gamma GOF, UCLs/EPCs, hypothesis tests, graphs.
+Coming next: ROS imputation of nondetects, UCLs/EPCs, hypothesis tests, graphs.
 
 Roadmap:
 
@@ -69,7 +74,8 @@ dotnet run --project src/OpenUCL.Cli -- summary <data-file>
 
 Contributions are welcome! Please read [CONTRIBUTING.md](CONTRIBUTING.md) first —
 in particular the **clean-room policy**: OpenUCL must never contain code derived from
-the ProUCL binaries.
+the ProUCL binaries. The people and agents behind the project are listed in
+[CONTRIBUTORS.md](CONTRIBUTORS.md).
 
 ## License
 

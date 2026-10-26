@@ -96,8 +96,8 @@ internal static class Program
 
         public IEnumerable<SeriesRecord> ReadSeries()
         {
-            bool isXlsx = Path.GetExtension(File) is ".xlsx" or ".xlsm";
-            if (!LongFormat && !isXlsx)
+            bool isSpreadsheet = Path.GetExtension(File).ToLowerInvariant() is ".xlsx" or ".xlsm" or ".xls";
+            if (!LongFormat && !isSpreadsheet)
             {
                 var packedOptions = new PackedSeriesReadOptions
                 {
@@ -178,7 +178,7 @@ internal static class Program
     private static int RunGof(string[] args)
     {
         double alpha = 0.05;
-        bool lognormal = false;
+        bool lognormal = false, gamma = false;
         var rest = new List<string>();
         for (int i = 0; i < args.Length; i++)
         {
@@ -188,20 +188,29 @@ internal static class Program
                     alpha = double.Parse(args[++i], CultureInfo.InvariantCulture); break;
                 case "--lognormal":
                     lognormal = true; break;
+                case "--gamma":
+                    gamma = true; break;
                 default:
                     rest.Add(args[i]); break;
             }
         }
+        if (gamma && lognormal)
+            throw new FormatException("--gamma and --lognormal are mutually exclusive");
         if (alpha is < 0.005 or > 0.495)
             throw new FormatException("--alpha must be in (0.005, 0.495)");
 
+        return gamma ? RunGammaGof(rest.ToArray(), alpha) : RunNormalGof(rest.ToArray(), alpha, lognormal);
+    }
+
+    private static int RunNormalGof(string[] args, double alpha, bool lognormal)
+    {
         string distribution = lognormal ? "lognormal" : "normal";
         Console.WriteLine($"goodness-of-fit, {distribution} distribution, alpha = {alpha}");
         Console.WriteLine($"{"point",-10} {"parameter",-8} {"N",5} {"ND",4} {"S-W W",8} {"p",8} {"W-crit",8} {"Lill D",8} {"D-crit",8} conclusion");
         Console.WriteLine(new string('-', 92));
 
         int series = 0;
-        foreach (var s in InputSpec.Parse(rest.ToArray()).ReadSeries())
+        foreach (var s in InputSpec.Parse(args).ReadSeries())
         {
             double[] detected = s.DetectedValues();
             if (lognormal)
@@ -240,6 +249,64 @@ internal static class Program
         return 0;
     }
 
+    private static int RunGammaGof(string[] args, double requestedAlpha)
+    {
+        // Gamma critical values are tabulated only at 0.10, 0.05, 0.01 (as in ProUCL).
+        double alpha = requestedAlpha <= 0.02 ? 0.01 : requestedAlpha <= 0.075 ? 0.05 : 0.10;
+        if (alpha != requestedAlpha)
+            Console.WriteLine($"note: gamma critical values are tabulated at 0.10/0.05/0.01; using alpha = {alpha}.");
+
+        Console.WriteLine($"goodness-of-fit, gamma distribution, alpha = {alpha}");
+        Console.WriteLine($"{"point",-10} {"parameter",-8} {"N",5} {"ND",4} {"k-hat",8} {"theta",8} {"A-D A2",8} {"A2-crit",8} {"KS D",8} {"D-crit",8} conclusion");
+        Console.WriteLine(new string('-', 104));
+
+        int series = 0;
+        foreach (var s in InputSpec.Parse(args).ReadSeries())
+        {
+            double[] detected = s.DetectedValues();
+            string kh = "-", th = "-", a2 = "-", ac = "-", d = "-", dc = "-";
+            string conclusionText = "not gamma";
+            bool acceptAd = false, acceptKs = false;
+            if (detected.Length >= 3 && detected.All(v => v > 0))
+            {
+                try
+                {
+                    var g = GammaGof.Compute(detected);
+                    var adCrit = g.CriticalValue(GammaGofTest.AndersonDarling, alpha);
+                    var ksCrit = g.CriticalValue(GammaGofTest.KolmogorovSmirnov, alpha);
+                    acceptAd = g.AD_A2 <= adCrit;
+                    acceptKs = g.KS_D <= ksCrit;
+                    kh = F(g.KHat);
+                    th = F(g.ThetaHat);
+                    a2 = F(g.AD_A2);
+                    ac = F(adCrit);
+                    d = F(g.KS_D);
+                    dc = F(ksCrit);
+                    conclusionText = (acceptAd, acceptKs) switch
+                    {
+                        (true, true) => "gamma",
+                        (false, false) => "not gamma",
+                        _ => "approx. gamma",
+                    };
+                }
+                catch (ArgumentException ex)
+                {
+                    Console.Error.WriteLine($"warning: {s.PointId}/{s.Parameter}: {ex.Message}");
+                }
+            }
+            else if (detected.Length >= 3)
+            {
+                Console.Error.WriteLine($"warning: {s.PointId}/{s.Parameter}: non-positive values present, gamma GOF not applicable.");
+            }
+
+            Console.WriteLine($"{Truncate(s.PointId, 10),-10} {Truncate(s.Parameter, 8),-8} {detected.Length,5} {s.NondetectCount,4} {kh,8} {th,8} {a2,8} {ac,8} {d,8} {dc,8} {conclusionText}");
+            series++;
+        }
+        Console.WriteLine(new string('-', 104));
+        Console.WriteLine($"{series} series. Critical values: Singh, Singh and Iaci (2002), ProUCL 5.2 Technical Guide Appendix A.");
+        return 0;
+    }
+
     private static string F(double? v) => v?.ToString("G6", CultureInfo.InvariantCulture) ?? "-";
 
     private static string Truncate(string s, int max) => s.Length <= max ? s : s[..(max - 1)] + "~";
@@ -254,7 +321,8 @@ internal static class Program
 
             commands:
               summary <file>        descriptive statistics for every series
-              gof <file>            goodness-of-fit (Shapiro-Wilk + Lilliefors) for every series
+              gof <file>            goodness-of-fit for every series (default: Shapiro-Wilk +
+                                    Lilliefors; --gamma for the gamma EDF tests)
 
             input formats:
               packed (default)      one series per row: point, parameter, "v1;v2;..."
@@ -272,6 +340,7 @@ internal static class Program
               --dl-col <name>       long format: detection limit column (default: value column holds DL)
               --alpha <x>           gof: significance level (default 0.05)
               --lognormal           gof: test the log-transformed data
+              --gamma               gof: gamma EDF tests (A-D and K-S, Appendix A critical values)
               -h, --help            show this help
 
             examples:
