@@ -1,0 +1,80 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    name: publish ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            rids: 'win-x64'
+          - os: ubuntu-latest
+            rids: 'linux-x64 linux-arm64'
+          - os: macos-latest
+            rids: 'osx-x64 osx-arm64'
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Publish (self-contained, single-file)
+        shell: bash
+        run: |
+          for rid in ${{ matrix.rids }}; do
+            dotnet publish src/OpenUCL.Cli -c Release -r "$rid" \
+              -p:PublishSingleFile=true -p:SelfContained=true \
+              -p:IncludeNativeLibrariesForSelfExtract=true -p:DebugType=embedded \
+              -o "out/cli-$rid"
+            dotnet publish src/OpenUCL.Gui -c Release -r "$rid" \
+              -p:PublishSingleFile=true -p:SelfContained=true \
+              -p:IncludeNativeLibrariesForSelfExtract=true -p:DebugType=embedded \
+              -o "out/gui-$rid"
+          done
+
+      - name: Merge macOS binaries into universal2 (native on Intel and Apple Silicon)
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          mkdir -p out/cli-osx-universal out/gui-osx-universal
+          lipo -create out/cli-osx-x64/openucl out/cli-osx-arm64/openucl -output out/cli-osx-universal/openucl
+          lipo -create out/gui-osx-x64/OpenUCL out/gui-osx-arm64/OpenUCL -output out/gui-osx-universal/OpenUCL
+
+      - name: Zip per-RID bundles
+        shell: pwsh
+        run: |
+          Get-ChildItem out -Directory | ForEach-Object {
+            Compress-Archive -Path "$($_.FullName)/*" -DestinationPath "$($_.FullName).zip" -Force
+          }
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: openucl-${{ matrix.os }}
+          path: out/*.zip
+
+  release:
+    needs: publish
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          merge-multiple: true
+          path: out/
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: out/*.zip

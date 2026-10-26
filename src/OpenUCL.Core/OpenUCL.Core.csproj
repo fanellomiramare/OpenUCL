@@ -1,0 +1,7 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <Description>Pure computation library: the statistical methods of OpenUCL (ProUCL 5.2 reimplementation). No UI, no filesystem, deterministic.</Description>
+  </PropertyGroup>
+
+</Project>

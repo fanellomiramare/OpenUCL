@@ -1,0 +1,19 @@
+# Normalize line endings: store text files with LF in the repository.
+* text=auto
+
+# Shell scripts and workflows must keep LF.
+*.sh text eol=lf
+*.yml text eol=lf
+
+# Windows-only
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+
+# Binary
+*.png binary
+*.jpg binary
+*.ico binary
+*.pdf binary
+*.xls binary
+*.xlsx binary

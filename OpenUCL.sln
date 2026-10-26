@@ -1,0 +1,57 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{4051F1AA-0F83-42CD-BE87-3D73F1B59206}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OpenUCL.Core", "src\OpenUCL.Core\OpenUCL.Core.csproj", "{72BE4CC3-6179-4FB9-B9F5-FA9244CC6FCB}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OpenUCL.Data", "src\OpenUCL.Data\OpenUCL.Data.csproj", "{76576375-14EE-4141-BA1B-8936BD7BC26A}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OpenUCL.Cli", "src\OpenUCL.Cli\OpenUCL.Cli.csproj", "{CDB9EC18-2910-483A-95FF-A4B20C87D5B6}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OpenUCL.Gui", "src\OpenUCL.Gui\OpenUCL.Gui.csproj", "{3161A273-A9EF-423A-9226-847B91976701}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{FA2872ED-A9B9-4034-8783-017DA374755C}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OpenUCL.Tests", "tests\OpenUCL.Tests\OpenUCL.Tests.csproj", "{F66F32FC-D26E-46EA-A9B2-15F737472D13}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{72BE4CC3-6179-4FB9-B9F5-FA9244CC6FCB}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{72BE4CC3-6179-4FB9-B9F5-FA9244CC6FCB}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{72BE4CC3-6179-4FB9-B9F5-FA9244CC6FCB}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{72BE4CC3-6179-4FB9-B9F5-FA9244CC6FCB}.Release|Any CPU.Build.0 = Release|Any CPU
+		{76576375-14EE-4141-BA1B-8936BD7BC26A}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{76576375-14EE-4141-BA1B-8936BD7BC26A}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{76576375-14EE-4141-BA1B-8936BD7BC26A}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{76576375-14EE-4141-BA1B-8936BD7BC26A}.Release|Any CPU.Build.0 = Release|Any CPU
+		{CDB9EC18-2910-483A-95FF-A4B20C87D5B6}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{CDB9EC18-2910-483A-95FF-A4B20C87D5B6}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{CDB9EC18-2910-483A-95FF-A4B20C87D5B6}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{CDB9EC18-2910-483A-95FF-A4B20C87D5B6}.Release|Any CPU.Build.0 = Release|Any CPU
+		{3161A273-A9EF-423A-9226-847B91976701}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{3161A273-A9EF-423A-9226-847B91976701}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{3161A273-A9EF-423A-9226-847B91976701}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{3161A273-A9EF-423A-9226-847B91976701}.Release|Any CPU.Build.0 = Release|Any CPU
+		{F66F32FC-D26E-46EA-A9B2-15F737472D13}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{F66F32FC-D26E-46EA-A9B2-15F737472D13}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{F66F32FC-D26E-46EA-A9B2-15F737472D13}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{F66F32FC-D26E-46EA-A9B2-15F737472D13}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{72BE4CC3-6179-4FB9-B9F5-FA9244CC6FCB} = {4051F1AA-0F83-42CD-BE87-3D73F1B59206}
+		{76576375-14EE-4141-BA1B-8936BD7BC26A} = {4051F1AA-0F83-42CD-BE87-3D73F1B59206}
+		{CDB9EC18-2910-483A-95FF-A4B20C87D5B6} = {4051F1AA-0F83-42CD-BE87-3D73F1B59206}
+		{3161A273-A9EF-423A-9226-847B91976701} = {4051F1AA-0F83-42CD-BE87-3D73F1B59206}
+		{F66F32FC-D26E-46EA-A9B2-15F737472D13} = {FA2872ED-A9B9-4034-8783-017DA374755C}
+	EndGlobalSection
+EndGlobal

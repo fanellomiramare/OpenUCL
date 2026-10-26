@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>OpenUCL.Cli</RootNamespace>
+    <AssemblyName>openucl</AssemblyName>
+    <Description>OpenUCL command line: batch statistics over packed series files.</Description>
+    <InvariantGlobalization>true</InvariantGlobalization>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\OpenUCL.Core\OpenUCL.Core.csproj" />
+    <ProjectReference Include="..\OpenUCL.Data\OpenUCL.Data.csproj" />
+  </ItemGroup>
+
+</Project>

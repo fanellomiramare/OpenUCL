@@ -1,0 +1,28 @@
+# Build artifacts
+bin/
+obj/
+out/
+publish/
+artifacts/
+*.user
+*.suo
+
+# IDE
+.vs/
+.vscode/
+.idea/
+*.swp
+
+# Test results
+TestResults/
+*.trx
+coverage/
+*.coverage
+
+# macOS
+.DS_Store
+
+# Reference documentation (public domain EPA docs, large PDFs:
+# download from https://www.epa.gov/land-research/proucl-software)
+docs_proucl_5.2/
+*.pdf

@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <Description>Data engine for OpenUCL: readers/writers for the packed series layout, classic (long) layout, CSV/TSV and XLSX. Streams series one at a time so huge batch files never need to fit in memory.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="OpenUCL.Tests" />
+  </ItemGroup>
+
+</Project>

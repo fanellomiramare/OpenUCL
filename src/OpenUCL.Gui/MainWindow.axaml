@@ -1,0 +1,32 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="OpenUCL.Gui.MainWindow"
+        Title="OpenUCL 0.1.0" Width="900" Height="600">
+    <Grid RowDefinitions="Auto,*,Auto">
+        <Menu Grid.Row="0">
+            <MenuItem Header="File">
+                <MenuItem Header="Open Single File Sheet..." IsEnabled="False" />
+                <Separator />
+                <MenuItem Header="Exit" Command="{Binding $parent[Window].Close}" />
+            </MenuItem>
+            <MenuItem Header="Stats/Sample Sizes" IsEnabled="False" />
+            <MenuItem Header="Graphs" IsEnabled="False" />
+            <MenuItem Header="Statistical Tests" IsEnabled="False" />
+            <MenuItem Header="Upper Limits/BTVs" IsEnabled="False" />
+            <MenuItem Header="UCLs/EPCs" IsEnabled="False" />
+            <MenuItem Header="Help">
+                <MenuItem Header="About OpenUCL..." IsEnabled="False" />
+            </MenuItem>
+        </Menu>
+
+        <Grid Grid.Row="1" ColumnDefinitions="200,*,280">
+            <TextBlock Grid.Column="0" Text="Navigation panel" Margin="8" Opacity="0.5" />
+            <TextBlock Grid.Column="1" Text="Data sheet (coming in Phase 1)" Margin="8" Opacity="0.5" />
+            <TextBlock Grid.Column="2" Text="Log panel" Margin="8" Opacity="0.5" />
+        </Grid>
+
+        <TextBlock Grid.Row="2" Margin="8,4"
+                   Text="OpenUCL 0.1.0 — open-source environmental statistics. Not affiliated with or endorsed by the U.S. EPA."
+                   Opacity="0.7" />
+    </Grid>
+</Window>
