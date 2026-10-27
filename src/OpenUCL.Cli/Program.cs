@@ -6,7 +6,7 @@ namespace OpenUCL.Cli;
 
 internal static class Program
 {
-    private const string Version = "0.6.0";
+    private const string Version = "0.7.0";
 
     public static int Main(string[] args)
     {
@@ -29,6 +29,7 @@ internal static class Program
                 "gof" => RunGof(args[1..]),
                 "ndstats" => RunNdStats(args[1..]),
                 "ucl" => RunUcl(args[1..]),
+                "btv" => RunBtv(args[1..]),
                 "dump" => RunDump(args[1..]),
                 _ => UnknownCommand(args[0]),
             };
@@ -639,6 +640,90 @@ internal static class Program
         var sb = new System.Text.StringBuilder();
         for (int i = 0; i < 4; i++) sb.Append(hash[i].ToString("x2", CultureInfo.InvariantCulture));
         return sb.ToString() + "…";
+    }
+
+    private static int RunBtv(string[] args)
+    {
+        double cc = 0.95, coverage = 0.95;
+        int k = 5;
+        var rest = new List<string>();
+        for (int i = 0; i < args.Length; i++)
+        {
+            switch (args[i])
+            {
+                case "--alpha" when i + 1 < args.Length:
+                    cc = 1.0 - double.Parse(args[++i], CultureInfo.InvariantCulture); break;
+                case "--coverage" when i + 1 < args.Length:
+                    coverage = double.Parse(args[++i], CultureInfo.InvariantCulture); break;
+                case "--k" when i + 1 < args.Length:
+                    k = int.Parse(args[++i], CultureInfo.InvariantCulture); break;
+                default:
+                    rest.Add(args[i]); break;
+            }
+        }
+        var spec = InputSpec.Parse(rest.ToArray());
+        string fileHash = ShortHash(spec.File);
+
+        int series = 0;
+        foreach (var s in spec.ReadSeries())
+        {
+            double[] values = s.DetectedValues();
+            if (values.Length < 3)
+            {
+                Console.Error.WriteLine($"warning: {s.PointId}/{s.Parameter}: fewer than 3 detects, BTVs skipped.");
+                continue;
+            }
+            var b = Btv.Compute(values, cc, coverage, k);
+            var sheet = new ReportSheet($"OpenUCL {Version} — BACKGROUND THRESHOLD VALUES ({cc * 100:G4}% confidence, {coverage * 100:G4}% coverage)");
+            sheet.Header.Add(("input", $"{spec.File} (sha256 {fileHash})"));
+            sheet.Header.Add(("series", $"{s.PointId} / {s.Parameter}    n = {s.N}    detects = {values.Length}    ND = {s.NondetectCount}"));
+            sheet.Header.Add(("options", $"future k = {k} (Bonferroni UPLk)"));
+            sheet.Header.Add(("generated", DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm 'UTC'", CultureInfo.InvariantCulture)));
+
+            var pct = sheet.AddSection("upper percentiles");
+            pct.ColumnsAre("percentile", "value", "reference");
+            pct.AddRow($"{coverage * 100:G4}% nonparametric", F(b.PercentileNonparametric), "TG eq. 3-1 (p*n, Excel-style)");
+            pct.AddRow("normal", F(b.PercentileNormal), "TG eq. 3-2");
+            if (b.LognormalApplicable) pct.AddRow("lognormal", F(b.PercentileLognormal), "TG eq. 3-3");
+            if (b.GammaApplicable) pct.AddRow("gamma (MLE)", F(b.PercentileGamma), "TG eq. 3-5");
+
+            var upl = sheet.AddSection("upper prediction limits");
+            upl.ColumnsAre("limit", "value", "reference");
+            upl.AddRow($"UPL1 normal", F(b.UplNormal1), "TG eq. 3-13");
+            upl.AddRow($"UPL{b.FutureK} normal (Bonferroni)", F(b.UplNormalK), "TG eq. 3-18");
+            upl.AddRow($"UPL{b.FutureK} mean of k, normal", F(b.UplNormalKMean), "t(1-a) * s * sqrt(1/k + 1/n)");
+            if (b.LognormalApplicable) upl.AddRow("UPL1 lognormal", F(b.UplLognormal1), "TG eq. 3-14");
+            if (b.GammaApplicable)
+            {
+                upl.AddRow("UPL1 gamma WH", F(b.UplGammaWh), "TG eq. 3-15 (cube-root scale)");
+                upl.AddRow("UPL1 gamma HW", F(b.UplGammaHw), "TG eq. 3-16 (fourth-root scale)");
+            }
+            upl.AddRow("UPL1 nonparametric", F(b.UplNonparametric), "TG eq. 3-17");
+            upl.AddRow("UPL1 Chebyshev", F(b.UplChebyshev), "TG section 3.5.4.1; conservative");
+
+            var utl = sheet.AddSection("upper tolerance limits");
+            utl.ColumnsAre("limit", "value", "reference");
+            utl.AddRow("tolerance factor K", F(b.ToleranceFactorK), "exact noncentral-t (Hahn-Meeker tables)");
+            utl.AddRow($"UTL{cc * 100:G4}-{coverage * 100:G4} normal", F(b.UtlNormal), "TG eq. 3-6");
+            if (b.LognormalApplicable) utl.AddRow($"UTL{cc * 100:G4}-{coverage * 100:G4} lognormal", F(b.UtlLognormal), "TG eq. 3-7");
+            if (b.GammaApplicable)
+            {
+                utl.AddRow($"UTL gamma WH", F(b.UtlGammaWh), "TG section 3.4.3 (cube-root scale)");
+                utl.AddRow($"UTL gamma HW", F(b.UtlGammaHw), "TG section 3.4.3 (fourth-root scale)");
+            }
+            utl.AddRow($"UTL nonparametric (order r = {b.UtlNonparametricOrder})", F(b.UtlNonparametric),
+                $"achieved CC = {F(b.UtlAchievedCC)} (TG eq. binomial coverage)");
+
+            var usl = sheet.AddSection("upper simultaneous limits");
+            usl.ColumnsAre("limit", "value", "reference");
+            usl.AddRow("USL nonparametric (max)", F(b.UslNonparametric), "TG section 3.6; use only on outlier-free single populations");
+            usl.AddNote("parametric USLs require the Singh (1993) d2max critical values and are not included yet.");
+
+            Console.Write(sheet.RenderText());
+            series++;
+        }
+        Console.WriteLine($"({series} series processed.)");
+        return 0;
     }
 
     private static string F(double? v) => v?.ToString("G6", CultureInfo.InvariantCulture) ?? "-";
