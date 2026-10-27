@@ -113,4 +113,50 @@ public static class SpecialFunctions
         if (x < 0) return 2.0 - Erfc(-x);
         return GammaQ(0.5, x * x);
     }
+
+    /// <summary>
+    /// Regularized incomplete beta function I_x(a, b), a,b &gt; 0, 0 &lt;= x &lt;= 1
+    /// (power series near the edges, symmetric continued fraction inside).
+    /// </summary>
+    public static double BetaI(double x, double a, double b)
+    {
+        if (x <= 0) return 0.0;
+        if (x >= 1) return 1.0;
+        double bt = Math.Exp(LogGamma(a + b) - LogGamma(a) - LogGamma(b) + a * Math.Log(x) + b * Math.Log(1.0 - x));
+        if (x < (a + 1.0) / (a + b + 2.0))
+            return bt * BetaContinuedFraction(x, a, b) / a;
+        return 1.0 - bt * BetaContinuedFraction(1.0 - x, b, a) / b;
+    }
+
+    private static double BetaContinuedFraction(double x, double a, double b)
+    {
+        const int maxIterations = 300;
+        const double eps = 3e-16, fpmin = 1e-300;
+        double qab = a + b, qap = a + 1.0, qam = a - 1.0;
+        double c = 1.0, d = 1.0 - qab * x / qap;
+        if (Math.Abs(d) < fpmin) d = fpmin;
+        d = 1.0 / d;
+        double h = d;
+        for (int i = 1; i <= maxIterations; i++)
+        {
+            int m2 = 2 * i;
+            double aa = i * (b - i) * x / ((qam + m2) * (a + m2));
+            d = 1.0 + aa * d;
+            if (Math.Abs(d) < fpmin) d = fpmin;
+            c = 1.0 + aa / c;
+            if (Math.Abs(c) < fpmin) c = fpmin;
+            d = 1.0 / d;
+            h *= d * c;
+            aa = -(a + i) * (qab + i) * x / ((a + m2) * (qap + m2));
+            d = 1.0 + aa * d;
+            if (Math.Abs(d) < fpmin) d = fpmin;
+            c = 1.0 + aa / c;
+            if (Math.Abs(c) < fpmin) c = fpmin;
+            d = 1.0 / d;
+            double del = d * c;
+            h *= del;
+            if (Math.Abs(del - 1.0) < eps) break;
+        }
+        return h;
+    }
 }

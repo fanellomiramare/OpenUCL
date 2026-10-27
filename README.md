@@ -35,13 +35,21 @@ the ground up for **large datasets** ("packed" series files), **batch processing
   **gamma EDF tests** (Anderson-Darling A² and K-S D) with the Singh, Singh and Iaci
   critical-value tables from the ProUCL 5.2 Technical Guide Appendix A, plus gamma
   MLE fitting (k̂, θ̂) with the bias-corrected k*, θ* used by ProUCL
+- **UCL/EPC suite** for full data sets: Student's t, modified-t, jackknife, CLT,
+  adjusted CLT (Chen), Chebyshev (mean, sd), approximate and adjusted gamma UCLs
+  (chi-square + table 2-2 beta interpolation), seeded bootstrap (standard, percentile,
+  BCA, bootstrap-t) — with a recommendation sheet following the ProUCL 5.2 decision
+  logic; **validated against the Technical Guide's worked Example 2-2** (gamma MLE,
+  chi-square values, gamma UCLs 71.77/74.27, t-UCL 61.66, CLT 60.98, Chebyshev 88.85)
+  — CLI: `openucl ucl` (self-documenting report sheets with reproducibility metadata)
 - **Nondetect (left-censored) estimation**: Kaplan-Meier mean/SE/sd (validated against
   the Technical Guide's Oahu example), robust ROS for lognormal (LROS) and gamma (GROS)
   distributions with Helsel-Cohn plotting positions for multiple detection limits,
   and DL/2 substitution — CLI: `openucl ndstats`
 - **Legacy `.xls` reading** (ExcelDataReader): the sample datasets shipped with
   ProUCL open directly
-- CLI: `openucl summary`, `openucl gof` (`--lognormal`, `--gamma`), `openucl ndstats`
+- CLI: `openucl summary`, `openucl gof` (`--lognormal`, `--gamma`), `openucl ndstats`,
+  `openucl ucl`
 - Avalonia GUI shell (menus laid out, modules coming online phase by phase)
 
 Coming next: UCLs/EPCs, hypothesis tests, graphs.
