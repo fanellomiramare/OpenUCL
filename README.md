@@ -35,12 +35,16 @@ the ground up for **large datasets** ("packed" series files), **batch processing
   **gamma EDF tests** (Anderson-Darling A² and K-S D) with the Singh, Singh and Iaci
   critical-value tables from the ProUCL 5.2 Technical Guide Appendix A, plus gamma
   MLE fitting (k̂, θ̂) with the bias-corrected k*, θ* used by ProUCL
+- **Nondetect (left-censored) estimation**: Kaplan-Meier mean/SE/sd (validated against
+  the Technical Guide's Oahu example), robust ROS for lognormal (LROS) and gamma (GROS)
+  distributions with Helsel-Cohn plotting positions for multiple detection limits,
+  and DL/2 substitution — CLI: `openucl ndstats`
 - **Legacy `.xls` reading** (ExcelDataReader): the sample datasets shipped with
   ProUCL open directly
-- CLI: `openucl summary`, `openucl gof` (`--lognormal`, `--gamma`)
+- CLI: `openucl summary`, `openucl gof` (`--lognormal`, `--gamma`), `openucl ndstats`
 - Avalonia GUI shell (menus laid out, modules coming online phase by phase)
 
-Coming next: ROS imputation of nondetects, UCLs/EPCs, hypothesis tests, graphs.
+Coming next: UCLs/EPCs, hypothesis tests, graphs.
 
 Roadmap:
 

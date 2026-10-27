@@ -4,4 +4,8 @@
     <Description>Pure computation library: the statistical methods of OpenUCL (ProUCL 5.2 reimplementation). No UI, no filesystem, deterministic.</Description>
   </PropertyGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="OpenUCL.Tests" />
+  </ItemGroup>
+
 </Project>

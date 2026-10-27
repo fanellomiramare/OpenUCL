@@ -1,3 +1,5 @@
+using OpenUCL.Core;
+
 namespace OpenUCL.Data;
 
 /// <summary>Which columns of a long-layout table form the series, and by what to group.</summary>

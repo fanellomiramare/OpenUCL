@@ -66,6 +66,26 @@ public static class GammaDistribution
         if (x <= 0) return 0.0;
         return SpecialFunctions.GammaP(k, x / theta);
     }
+
+    /// <summary>
+    /// Gamma quantile: bisection inversion of the CDF (deterministic, ~1e-12 relative).
+    /// </summary>
+    public static double Quantile(double p, double k, double theta)
+    {
+        if (p is <= 0.0 or >= 1.0)
+            throw new ArgumentOutOfRangeException(nameof(p), "p must lie strictly between 0 and 1.");
+
+        double lo = 0.0;
+        double hi = theta * (k + 10.0 * Math.Sqrt(k) + 10.0);
+        while (Cdf(hi, k, theta) < p) hi *= 2.0;
+        for (int i = 0; i < 200; i++)
+        {
+            double mid = 0.5 * (lo + hi);
+            if (Cdf(mid, k, theta) < p) lo = mid;
+            else hi = mid;
+        }
+        return 0.5 * (lo + hi);
+    }
 }
 
 public enum GammaGofTest { AndersonDarling, KolmogorovSmirnov }

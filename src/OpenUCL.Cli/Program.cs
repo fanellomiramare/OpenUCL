@@ -6,7 +6,7 @@ namespace OpenUCL.Cli;
 
 internal static class Program
 {
-    private const string Version = "0.2.0";
+    private const string Version = "0.4.0";
 
     public static int Main(string[] args)
     {
@@ -27,6 +27,8 @@ internal static class Program
             {
                 "summary" => RunSummary(args[1..]),
                 "gof" => RunGof(args[1..]),
+                "ndstats" => RunNdStats(args[1..]),
+                "dump" => RunDump(args[1..]),
                 _ => UnknownCommand(args[0]),
             };
         }
@@ -117,9 +119,12 @@ internal static class Program
                 DetectionLimitColumn = DlColumn,
             };
             var table = LongTableReader.ReadTable(File, tableOptions);
+            var excluded = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            if (NdFlagColumn is not null) excluded.Add(NdFlagColumn);
+            if (DlColumn is not null) excluded.Add(DlColumn);
             var valueColumns = ValueColumns.Count > 0
                 ? ValueColumns
-                : table.Columns.Where(c => IsNumericColumn(table, c)).ToList();
+                : table.Columns.Where(c => !excluded.Contains(c) && IsNumericColumn(table, c)).ToList();
             if (valueColumns.Count == 0)
                 throw new FormatException("no numeric value column found; use --value-col to select one");
             return LongTableReader.ToSeries(table,
@@ -307,6 +312,99 @@ internal static class Program
         return 0;
     }
 
+    private static int RunNdStats(string[] args)
+    {
+        Console.WriteLine($"{"point",-9} {"parameter",-8} {"N",4} {"ND",4} {"%ND",6} {"det.mean",10} {"det.sd",10} {"DL/2 mean",10} {"KM mean",10} {"KM SE",10} {"KM sd",10} {"LROS mean",10} {"LROS sd",10} {"GROS mean",10} {"GROS sd",10}");
+        Console.WriteLine(new string('-', 154));
+
+        int series = 0;
+        foreach (var s in InputSpec.Parse(args).ReadSeries())
+        {
+            string dl2m = "-", km = "-", kmse = "-", kmsd = "-", lm = "-", ls = "-", gm = "-", gs = "-";
+            try
+            {
+                var dl2 = Descriptive.Compute(Censored.DlHalf(s.Observations));
+                dl2m = F(dl2.Mean);
+            }
+            catch (ArgumentException) { }
+
+            if (s.Observations.Count > 0)
+            {
+                try
+                {
+                    var km2 = Censored.KaplanMeier(s.Observations);
+                    km = F(km2.Mean);
+                    kmse = double.IsNaN(km2.StandardErrorOfMean) ? "-" : F(km2.StandardErrorOfMean);
+                    kmsd = F(km2.Sd);
+                }
+                catch (ArgumentException) { }
+
+                if (s.NondetectCount > 0)
+                {
+                    try
+                    {
+                        var lros = Censored.RosLognormal(s.Observations);
+                        var st = Descriptive.Compute(lros.FullData);
+                        lm = F(st.Mean);
+                        ls = F(st.StandardDeviation);
+                    }
+                    catch (ArgumentException ex) { Console.Error.WriteLine($"warning: {s.PointId}/{s.Parameter}: LROS: {ex.Message}"); }
+
+                    try
+                    {
+                        var gros = Censored.RosGamma(s.Observations);
+                        var st = Descriptive.Compute(gros.FullData);
+                        gm = F(st.Mean);
+                        gs = F(st.StandardDeviation);
+                        if (gros.NegativeImputations)
+                            Console.Error.WriteLine($"warning: {s.PointId}/{s.Parameter}: GROS produced non-positive imputed NDs (documented limitation; prefer KM or LROS).");
+                    }
+                    catch (ArgumentException ex) { Console.Error.WriteLine($"warning: {s.PointId}/{s.Parameter}: GROS: {ex.Message}"); }
+                }
+            }
+
+            double[] detected = s.DetectedValues();
+            SampleSummary? det = detected.Length > 0 ? Descriptive.Compute(detected) : null;
+            string detSd = det is { N: > 1 } ? F(det.StandardDeviation) : "-";
+            double pctNd = s.N > 0 ? 100.0 * s.NondetectCount / s.N : 0;
+
+            Console.WriteLine($"{Truncate(s.PointId, 9),-9} {Truncate(s.Parameter, 8),-8} {s.N,4} {s.NondetectCount,4} {pctNd,5:G4}% {F(det?.Mean),10} {detSd,10} {dl2m,10} {km,10} {kmse,10} {kmsd,10} {lm,10} {ls,10} {gm,10} {gs,10}");
+            series++;
+        }
+        Console.WriteLine(new string('-', 154));
+        Console.WriteLine($"{series} series. KM = Kaplan-Meier (TG eq. 4-1..4-3); LROS/GROS = robust ROS (TG section 4.5); DL/2 substitution.");
+        return 0;
+    }
+
+    private static int RunDump(string[] args)
+    {
+        var spec = InputSpec.Parse(args);
+        bool isSpreadsheet = Path.GetExtension(spec.File).ToLowerInvariant() is ".xlsx" or ".xlsm" or ".xls";
+        var tableOptions = new LongTableReadOptions
+        {
+            ColumnSeparator = spec.ColumnSep ?? ';',
+            HasHeader = !spec.NoHeader,
+        };
+        var table = isSpreadsheet || spec.LongFormat
+            ? LongTableReader.ReadTable(spec.File, tableOptions)
+            : throw new FormatException("dump reads long-format tables (csv/tsv/xlsx/xls)");
+
+        Console.WriteLine($"columns ({table.Columns.Count}): {string.Join(" | ", table.Columns)}");
+        Console.WriteLine($"rows: {table.RowCount}");
+        for (int r = 0; r < table.RowCount; r++)
+        {
+            var cells = new string[table.Columns.Count];
+            for (int c = 0; c < table.Columns.Count; c++)
+            {
+                var d = table.GetDouble(r, c);
+                cells[c] = d is not null ? d.Value.ToString("G6", CultureInfo.InvariantCulture)
+                                         : $"'{table.GetString(r, c)}'";
+            }
+            Console.WriteLine($"{r + 1,4}: {string.Join(" | ", cells)}");
+        }
+        return 0;
+    }
+
     private static string F(double? v) => v?.ToString("G6", CultureInfo.InvariantCulture) ?? "-";
 
     private static string Truncate(string s, int max) => s.Length <= max ? s : s[..(max - 1)] + "~";
@@ -323,6 +421,7 @@ internal static class Program
               summary <file>        descriptive statistics for every series
               gof <file>            goodness-of-fit for every series (default: Shapiro-Wilk +
                                     Lilliefors; --gamma for the gamma EDF tests)
+              ndstats <file>        estimates with nondetects: DL/2, Kaplan-Meier, LROS, GROS
 
             input formats:
               packed (default)      one series per row: point, parameter, "v1;v2;..."

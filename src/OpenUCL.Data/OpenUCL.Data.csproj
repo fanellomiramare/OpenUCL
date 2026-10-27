@@ -13,4 +13,8 @@
     <PackageReference Include="ExcelDataReader" Version="3.*" />
   </ItemGroup>
 
+  <ItemGroup>
+    <ProjectReference Include="..\OpenUCL.Core\OpenUCL.Core.csproj" />
+  </ItemGroup>
+
 </Project>
