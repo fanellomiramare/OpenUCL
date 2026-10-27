@@ -6,7 +6,7 @@ namespace OpenUCL.Cli;
 
 internal static class Program
 {
-    private const string Version = "0.5.0";
+    private const string Version = "0.6.0";
 
     public static int Main(string[] args)
     {
@@ -458,7 +458,17 @@ internal static class Program
             }
             var normalConclusion = GoodnessOfFit.Conclude(sw, lf, alpha);
             bool normalPass = normalConclusion != GofConclusion.NotNormal;
-            double alphaSnap = SnapAlpha(alpha);
+
+            // ND-aware UCLs (computed up front so the recommendation can use them).
+            UclWithNdResult? un = null;
+            if (s.NondetectCount > 0 && detected.Length >= 2)
+            {
+                try { un = UclWithNd.Compute(s.Observations, cc, boot, seed); }
+                catch (ArgumentException ex)
+                {
+                    Console.Error.WriteLine($"warning: {s.PointId}/{s.Parameter}: ND UCLs: {ex.Message}");
+                }
+            }
 
             var sheet = new ReportSheet($"OpenUCL {Version} — UCL / EPC ESTIMATION ({cc * 100:G4}% confidence)");
             sheet.Header.Add(("input", $"{spec.File} (sha256 {fileHash})"));
@@ -506,7 +516,21 @@ internal static class Program
             var ucls = sheet.AddSection($"ucls / epcs ({cc * 100:G4}% confidence)");
             ucls.ColumnsAre("method", "UCL", "reference");
             string? recommended = null; string rationale = "";
-            if (gammaPass && u.GammaApplicable && !double.IsNaN(u.GammaAdjusted))
+            if (un is not null && gammaPass && !double.IsNaN(un.GrosGammaAdjusted))
+            {
+                ucls.AddRowHighlighted("GROS gamma adjusted", F(un.GrosGammaAdjusted), "TG eq. 2-35 on GROS data (n<=50)");
+                recommended = $"GROS gamma adjusted UCL = {F(un.GrosGammaAdjusted)}";
+                rationale = $"nondetects present ({s.NondetectCount} of {s.N}); detected data approximate gamma " +
+                            $"(one of A-D/K-S passes at {alpha:G2}); gamma UCLs computed on the GROS-imputed data set " +
+                            "(TG example 4-4 logic).";
+            }
+            else if (un is not null && normalPass)
+            {
+                ucls.AddRowHighlighted("KM (t)", F(un.KmT), "KM mean + t * SE");
+                recommended = $"KM (t) UCL = {F(un.KmT)}";
+                rationale = "detected data are approximately normal; KM estimates in the t equation (TG section 4.6).";
+            }
+            else if (gammaPass && u.GammaApplicable && !double.IsNaN(u.GammaAdjusted))
             {
                 ucls.AddRowHighlighted("gamma adjusted (n<=50)", F(u.GammaAdjusted), "TG eq. 2-35, table 2-2");
                 recommended = $"gamma adjusted UCL = {F(u.GammaAdjusted)}";
@@ -524,11 +548,18 @@ internal static class Program
                 recommended = $"Student's t UCL = {F(u.StudentT)}";
                 rationale = "detected data are approximately normal (ProUCL 5.2 logic).";
             }
-            else if (Math.Abs(u.Skewness) <= 1.0)
+            else if (Math.Abs(u.Skewness) <= 1.0 && un is null)
             {
                 ucls.AddRowHighlighted("bootstrap-t", F(u.BootstrapT), "TG eq. 2-62");
                 recommended = $"bootstrap-t UCL = {F(u.BootstrapT)}";
                 rationale = "no parametric distribution identified; mild skewness favors the bootstrap-t.";
+            }
+            else if (un is not null)
+            {
+                ucls.AddRowHighlighted("KM percentile bootstrap", F(un.KmPercentileBootstrap), "bootstrap of observation pairs");
+                recommended = $"KM percentile bootstrap UCL = {F(un.KmPercentileBootstrap)}";
+                rationale = "no parametric distribution identified; KM bootstrap accounts for the nondetects " +
+                            "(skewness caveat: coverage may fall short of nominal for highly skewed data).";
             }
             else if (detected.Length < 75)
             {
@@ -563,6 +594,32 @@ internal static class Program
             var rec = sheet.AddSection("recommendation");
             rec.ColumnsAre("recommended UCL", "rationale");
             rec.AddRow(recommended ?? "none", rationale);
+
+            if (un is not null)
+            {
+                var ndSec = sheet.AddSection("ucls accounting for nondetects");
+                    ndSec.ColumnsAre("method", "UCL", "reference");
+                    ndSec.AddRow("KM (t)", F(un.KmT), "KM mean + t * SE (TG eq. 4-1..4-2)");
+                    ndSec.AddRow("KM (z)", F(un.KmZ), "KM mean + z * SE");
+                    ndSec.AddRow("KM (Chebyshev)", F(un.KmChebyshev), "TG eq. 2-46 on KM estimates; not recommended by ProUCL 5.2");
+                    ndSec.AddRow("KM percentile bootstrap", F(un.KmPercentileBootstrap), "bootstrap of observation pairs, seed " + seed);
+                    ndSec.AddRow("KM BCA bootstrap", F(un.KmBcaBootstrap), "TG eq. 2-58..2-61 on KM means");
+                    if (un.LrosT > 0)
+                    {
+                        ndSec.AddRow("LROS (t)", F(un.LrosT), "t-UCL on LROS-imputed data set");
+                        ndSec.AddRow("LROS percentile bootstrap", F(un.LrosPercentileBootstrap), "percentile bootstrap on LROS data");
+                    }
+                    if (un.GrosT > 0)
+                    {
+                        ndSec.AddRow("GROS (t)", F(un.GrosT), "t-UCL on GROS-imputed data set");
+                        if (!double.IsNaN(un.GrosGammaAdjusted))
+                            ndSec.AddRow("GROS gamma adjusted", F(un.GrosGammaAdjusted), "TG eq. 2-35 on GROS data (n<=50)");
+                        if (!double.IsNaN(un.GrosGammaApproximate))
+                            ndSec.AddRow("GROS gamma approximate", F(un.GrosGammaApproximate), "TG eq. 2-34 on GROS data");
+                    }
+                    ndSec.AddNote("when detected data are gamma, ProUCL recommends gamma UCLs on the GROS data set (TG example 4-4); " +
+                                  "when normal, the KM (t) UCL. DL/2-based UCLs are available but not recommended (TG section 4.2.3).");
+            }
 
             Console.Write(sheet.RenderText());
             series++;

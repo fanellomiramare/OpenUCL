@@ -74,10 +74,9 @@ public class KaplanMeierTests
         Assert.Equal(11, series[0].DetectedValues().Length);
         var km = Censored.KaplanMeier(series[0].Observations);
         Assert.Equal(0.713, km.Sd, 2);
-        // The TG quotes Helsel's own SE (0.165) for comparison, not the output of
-        // eq. 4-2; the exact eq. 4-2 transcription from the 508-tagged PDF is
-        // illegible and is pending the Singh-Maichle-Lee (2006) report. For now:
-        // the SE must be positive and smaller than the sd.
+        // The TG quotes Helsel's own SE (0.165, a different estimator) for comparison;
+        // our SE implements TG eq. 4-2 directly (formula confirmed against the ProUCL
+        // 5.1 Technical Guide, same chapter). Sanity: positive and smaller than sd.
         Assert.True(km.StandardErrorOfMean > 0 && km.StandardErrorOfMean < km.Sd,
             $"SE={km.StandardErrorOfMean}");
     }

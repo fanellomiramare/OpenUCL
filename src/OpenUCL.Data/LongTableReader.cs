@@ -174,7 +174,7 @@ public static class LongTableReader
             _encodingProviderRegistered = true;
         }
 
-        using var stream = File.Open(path, FileMode.Open, FileAccess.Read);
+        using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
         using var reader = ExcelDataReader.ExcelReaderFactory.CreateReader(stream);
         if (!reader.Read()) return new LongTable(Array.Empty<string>(), Array.Empty<object?[]>());
 
