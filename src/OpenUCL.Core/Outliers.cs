@@ -10,6 +10,16 @@ public sealed record DixonResult
     public required double HighStatistic { get; init; }   // X(n) potential high outlier
     public required double LowValue { get; init; }
     public required double HighValue { get; init; }
+    /// <summary>Exact critical values (one-sided) computed by numerical integration.</summary>
+    public required double Critical10 { get; init; }
+    public required double Critical5 { get; init; }
+    public required double Critical1 { get; init; }
+    public bool LowOutlier10 => LowStatistic > Critical10;
+    public bool LowOutlier5 => LowStatistic > Critical5;
+    public bool LowOutlier1 => LowStatistic > Critical1;
+    public bool HighOutlier10 => HighStatistic > Critical10;
+    public bool HighOutlier5 => HighStatistic > Critical5;
+    public bool HighOutlier1 => HighStatistic > Critical1;
 }
 
 /// <summary>One step of Rosner's iterative outlier search (TG 5.2 section 7.3.2).</summary>
@@ -54,8 +64,10 @@ public static class Outliers
 {
     public const int RosnerMaxOutliers = 10;
 
-    /// <summary>Dixon's test. Requires 3 &lt;= n &lt;= 25. Critical values are tabulated
-    /// (Rorabacher 1991 / Gilbert 1987) and are not yet embedded; the statistics are exact.</summary>
+    /// <summary>
+    /// Dixon's test. Requires 3 &lt;= n &lt;= 25. Critical values are exact, computed
+    /// by numerical integration of the order-statistic ratio distribution (cached).
+    /// </summary>
     public static DixonResult Dixon(ReadOnlySpan<double> data)
     {
         int n = data.Length;
@@ -91,11 +103,24 @@ public static class Outliers
             _ => (x[n - 1] - x[n - 3]) / (x[n - 1] - x[2]),
         };
 
+        // (a, b, c) order statistics (1-based) of the subrange ratio for this n.
+        (int a, int b, int c) = n switch
+        {
+            <= 7 => (1, n - 1, n),
+            <= 10 => (2, n - 1, n),
+            <= 13 => (2, n - 2, n),
+            _ => (3, n - 2, n),
+        };
+        double crit10 = DixonExact.CriticalValue(n, a, b, c, 0.10);
+        double crit5 = DixonExact.CriticalValue(n, a, b, c, 0.05);
+        double crit1 = DixonExact.CriticalValue(n, a, b, c, 0.01);
+
         return new DixonResult
         {
             N = n, Variant = variant,
             LowStatistic = low, LowValue = x[0],
             HighStatistic = high, HighValue = x[^1],
+            Critical10 = crit10, Critical5 = crit5, Critical1 = crit1,
         };
     }
 

@@ -6,7 +6,7 @@ namespace OpenUCL.Cli;
 
 internal static class Program
 {
-    private const string Version = "0.8.0";
+    private const string Version = "0.9.0";
 
     public static int Main(string[] args)
     {
@@ -32,6 +32,8 @@ internal static class Program
                 "btv" => RunBtv(args[1..]),
                 "outlier" => RunOutlier(args[1..]),
                 "test1" => RunTest1(args[1..]),
+                "test2" => RunTest2(args[1..]),
+                "trend" => RunTrend(args[1..]),
                 "dump" => RunDump(args[1..]),
                 _ => UnknownCommand(args[0]),
             };
@@ -761,11 +763,24 @@ internal static class Program
             if (detected.Length is >= 3 and <= 25)
             {
                 var d = Outliers.Dixon(detected);
+                string crit = $"10% {F(d.Critical10)} | 5% {F(d.Critical5)} | 1% {F(d.Critical1)}";
                 var sec = sheet.AddSection("dixon extreme value test (n <= 25)");
-                sec.ColumnsAre("tail", "observation", "statistic", "variant", "critical values");
-                sec.AddRow("low", F(d.LowValue), F(d.LowStatistic), d.Variant, "pending table (Rorabacher 1991)");
-                sec.AddRow("high", F(d.HighValue), F(d.HighStatistic), d.Variant, "pending table (Rorabacher 1991)");
-                sec.AddNote("critical values for the subrange variants are not embedded yet; compare the statistics with published tables.");
+                sec.ColumnsAre("tail", "observation", "statistic", "variant", "critical (10/5/1%)", "outlier");
+                sec.AddRow("low", F(d.LowValue), F(d.LowStatistic), d.Variant, crit,
+                    (d.LowOutlier1, d.LowOutlier5, d.LowOutlier10) switch
+                    {
+                        (_, _, true) or (_, true, _) or (true, _, _) => "yes",
+                        _ => "no",
+                    });
+                sec.AddRow("high", F(d.HighValue), F(d.HighStatistic), d.Variant, crit,
+                    (d.HighOutlier1, d.HighOutlier5, d.HighOutlier10) switch
+                    {
+                        (true, _, _) => "yes (1%)",
+                        (_, true, _) => "yes (5%)",
+                        (_, _, true) => "yes (10%)",
+                        _ => "no",
+                    });
+                sec.AddNote("exact critical values computed by numerical integration of the order-statistic ratio distribution.");
             }
 
             if (detected.Length >= 25)
@@ -858,6 +873,165 @@ internal static class Program
         return 0;
     }
 
+    private static int RunTest2(string[] args)
+    {
+        double alpha = 0.05;
+        string? groupCol = null, groupA = null, groupB = null, valueCol = null;
+        bool lowerTail = false;
+        var rest = new List<string>();
+        for (int i = 0; i < args.Length; i++)
+        {
+            switch (args[i])
+            {
+                case "--alpha" when i + 1 < args.Length:
+                    alpha = double.Parse(args[++i], CultureInfo.InvariantCulture); break;
+                case "--group-col" when i + 1 < args.Length:
+                    groupCol = args[++i]; break;
+                case "--group-a" when i + 1 < args.Length:
+                    groupA = args[++i]; break;
+                case "--group-b" when i + 1 < args.Length:
+                    groupB = args[++i]; break;
+                case "--value-col" when i + 1 < args.Length:
+                    valueCol = args[++i]; break;
+                case "--lower":
+                    lowerTail = true; break;
+                default:
+                    rest.Add(args[i]); break;
+            }
+        }
+        if (rest.Count == 0) throw new FormatException("no input file given");
+        if (rest.Count > 1 && groupCol is not null)
+            throw new FormatException("provide either one file with --group-col, or two files without it");
+
+        double[] sampleA, sampleB;
+        string description;
+        var options = new LongTableReadOptions();
+        if (rest.Count == 1)
+        {
+            if (groupCol is null || groupA is null || groupB is null)
+                throw new FormatException("single-file mode requires --group-col, --group-a and --group-b");
+            var spec = InputSpec.Parse(rest.ToArray());
+            var tableOptions = new LongTableReadOptions
+            {
+                ColumnSeparator = spec.ColumnSep ?? ';',
+                HasHeader = !spec.NoHeader,
+                NdFlagColumn = spec.NdFlagColumn,
+                NdFlagValue = spec.NdFlagValue,
+                DetectionLimitColumn = spec.DlColumn,
+            };
+            var table = LongTableReader.ReadTable(spec.File, tableOptions);
+            var excluded = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            if (spec.NdFlagColumn is not null) excluded.Add(spec.NdFlagColumn);
+            if (spec.DlColumn is not null) excluded.Add(spec.DlColumn);
+            var valueColumns = spec.ValueColumns.Count > 0 ? spec.ValueColumns
+                : table.Columns.Where(c => !excluded.Contains(c) && IsNumericColumn(table, c)).ToList();
+            if (valueColumns.Count == 0)
+                throw new FormatException("no numeric value column found; use --value-col");
+            if (valueColumns.Count > 1 && valueCol is null)
+                throw new FormatException($"multiple value columns ({string.Join(", ", valueColumns)}): use --value-col");
+
+            var series = LongTableReader.ToSeries(table,
+                new SeriesSelection
+                {
+                    ValueColumns = valueCol is not null ? new[] { valueCol } : valueColumns,
+                    GroupColumn = groupCol,
+                }, tableOptions).ToList();
+
+            sampleA = Pool(series.Where(s => string.Equals(s.PointId, groupA, StringComparison.OrdinalIgnoreCase)));
+            sampleB = Pool(series.Where(s => string.Equals(s.PointId, groupB, StringComparison.OrdinalIgnoreCase)));
+            description = $"{spec.File}: {groupCol} '{groupA}' (n={sampleA.Length}) vs '{groupB}' (n={sampleB.Length}), column '{valueCol ?? valueColumns[0]}'";
+        }
+        else
+        {
+            var fileA = InputSpec.Parse(new[] { rest[0] });
+            var fileB = InputSpec.Parse(new[] { rest[1] });
+            sampleA = fileA.ReadSeries().SelectMany(s => s.DetectedValues()).ToArray();
+            sampleB = fileB.ReadSeries().SelectMany(s => s.DetectedValues()).ToArray();
+            description = $"{rest[0]} (n={sampleA.Length}) vs {rest[1]} (n={sampleB.Length})";
+        }
+
+        if (sampleA.Length < 2 || sampleB.Length < 2)
+            throw new FormatException("each sample needs at least 2 observations");
+
+        var sheet = new ReportSheet($"OpenUCL {Version} — TWO-SAMPLE HYPOTHESIS TESTS (alpha = {alpha:G2})");
+        sheet.Header.Add(("samples", description));
+        sheet.Header.Add(("generated", DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm 'UTC'", CultureInfo.InvariantCulture)));
+
+        var sec = sheet.AddSection("two-sample tests");
+        sec.ColumnsAre("test", "form", "statistic", "df", "p (one-sided)", "reject H0");
+        var te = TwoSampleTests.TTestEqualVariance(sampleA, sampleB, !lowerTail, alpha);
+        sec.AddRow("Student's t (pooled)", te.TestForm, F(te.Statistic), F(te.DegreesOfFreedom), F(te.PValueOneSided), te.RejectNull ? "yes" : "no");
+        var ts = TwoSampleTests.TTestSatterthwaite(sampleA, sampleB, !lowerTail, alpha);
+        sec.AddRow("Satterthwaite t", ts.TestForm, F(ts.Statistic), F(ts.DegreesOfFreedom), F(ts.PValueOneSided), ts.RejectNull ? "yes" : "no");
+        var w = TwoSampleTests.Wmw(sampleA, sampleB, !lowerTail, alpha);
+        sec.AddRow("Wilcoxon-Mann-Whitney", w.TestForm, F(w.Statistic), "normal approx.", F(w.PValueOneSided), w.RejectNull ? "yes" : "no");
+        try
+        {
+            var (f, p2, rej, df1, df2) = TwoSampleTests.FTest(sampleA, sampleB, alpha);
+            sec.AddRow("F test (variances)", $"HA: variances differ", F(f), $"{df1},{df2}", F(p2), rej ? "yes" : "no");
+        }
+        catch (ArgumentException ex) { sec.AddRow("F test (variances)", "-", "-", "-", $"n/a: {ex.Message}"); }
+        sec.AddNote($"form 1: HA sample1 < sample2; form 2: HA sample1 > sample2. Selected: {(lowerTail ? "form 1" : "form 2")}. " +
+                    "WMW uses the normal approximation with continuity and tie corrections.");
+
+        Console.Write(sheet.RenderText());
+        return 0;
+
+        static double[] Pool(IEnumerable<SeriesRecord> series) =>
+            series.SelectMany(s => s.DetectedValues()).ToArray();
+    }
+
+    private static bool IsNumericColumn(LongTable table, string column)
+    {
+        int col = table.ColumnIndex(column);
+        int checked_ = 0;
+        for (int row = 0; row < table.RowCount && checked_ < 100; row++)
+        {
+            if (table.GetDouble(row, col) is not null) return true;
+            if (table.GetString(row, col).Trim().Length > 0) checked_++;
+        }
+        return false;
+    }
+
+    private static int RunTrend(string[] args)
+    {
+        var spec = InputSpec.Parse(args);
+        int series = 0;
+        foreach (var s in spec.ReadSeries())
+        {
+            if (s.N < 4)
+            {
+                Console.Error.WriteLine($"warning: {s.PointId}/{s.Parameter}: fewer than 4 observations, trend skipped.");
+                continue;
+            }
+            double[] values = s.Observations.Select(o => o.Value).ToArray();
+            var t = Trend.Compute(values);
+            var sheet = new ReportSheet($"OpenUCL {Version} — TREND ANALYSIS");
+            sheet.Header.Add(("series", $"{s.PointId} / {s.Parameter}    n = {s.N}"));
+            sheet.Header.Add(("generated", DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm 'UTC'", CultureInfo.InvariantCulture)));
+            sheet.AddSection("notes")
+                .AddNote("series order = time order; nondetects enter with their detection limit value.");
+
+            var mk = sheet.AddSection("mann-kendall trend test");
+            mk.ColumnsAre("statistic", "value");
+            mk.AddRow("S", F(t.MkS));
+            mk.AddRow("z (continuity corrected)", F(t.MkZ));
+            mk.AddRow("p (two-sided)", F(t.MkPValueTwoSided));
+            mk.AddRow("trend", t.MkTrend);
+
+            var slopes = sheet.AddSection("slopes");
+            slopes.ColumnsAre("method", "slope", "extra");
+            slopes.AddRow("Theil-Sen", F(t.TheilSenSlope), "median of pairwise slopes");
+            slopes.AddRow("OLS slope", F(t.OlsSlope), $"intercept {F(t.OlsIntercept)}");
+            slopes.AddRow("OLS R-squared", F(t.OlsR2), $"slope p (two-sided) = {F(t.OlsSlopePValue)}");
+
+            Console.Write(sheet.RenderText());
+            series++;
+        }
+        Console.WriteLine($"({series} series processed.)");
+        return 0;
+    }
+
     private static string F(double? v) => v?.ToString("G6", CultureInfo.InvariantCulture) ?? "-";
 
     private static string Truncate(string s, int max) => s.Length <= max ? s : s[..(max - 1)] + "~";
@@ -879,6 +1053,8 @@ internal static class Program
               btv <file>            background threshold values (percentiles, UPL, UTL, USL)
               outlier <file>        Dixon (n<=25) and Rosner (n>=25) outlier tests
               test1 <file>          one-sample tests vs Cs (t, sign, Wilcoxon), --cs required
+              test2 <file>          two-sample tests (t, Satterthwaite, WMW, F) with --group-col
+              trend <file>          Mann-Kendall, Theil-Sen and OLS trend per series
 
             input formats:
               packed (default)      one series per row: point, parameter, "v1;v2;..."
