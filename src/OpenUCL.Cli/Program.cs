@@ -6,7 +6,7 @@ namespace OpenUCL.Cli;
 
 internal static class Program
 {
-    private const string Version = "0.7.0";
+    private const string Version = "0.8.0";
 
     public static int Main(string[] args)
     {
@@ -30,6 +30,8 @@ internal static class Program
                 "ndstats" => RunNdStats(args[1..]),
                 "ucl" => RunUcl(args[1..]),
                 "btv" => RunBtv(args[1..]),
+                "outlier" => RunOutlier(args[1..]),
+                "test1" => RunTest1(args[1..]),
                 "dump" => RunDump(args[1..]),
                 _ => UnknownCommand(args[0]),
             };
@@ -726,6 +728,136 @@ internal static class Program
         return 0;
     }
 
+    private static int RunOutlier(string[] args)
+    {
+        double alpha = 0.05;
+        int r0 = Outliers.RosnerMaxOutliers;
+        var rest = new List<string>();
+        for (int i = 0; i < args.Length; i++)
+        {
+            switch (args[i])
+            {
+                case "--alpha" when i + 1 < args.Length:
+                    alpha = double.Parse(args[++i], CultureInfo.InvariantCulture); break;
+                case "--max-outliers" when i + 1 < args.Length:
+                    r0 = int.Parse(args[++i], CultureInfo.InvariantCulture); break;
+                default:
+                    rest.Add(args[i]); break;
+            }
+        }
+        var spec = InputSpec.Parse(rest.ToArray());
+
+        int series = 0;
+        foreach (var s in spec.ReadSeries())
+        {
+            double[] detected = s.DetectedValues();
+            var sheet = new ReportSheet($"OpenUCL {Version} — OUTLIER TESTS (alpha = {alpha:G2})");
+            sheet.Header.Add(("series", $"{s.PointId} / {s.Parameter}    n (detects) = {detected.Length}    ND = {s.NondetectCount}"));
+            sheet.Header.Add(("generated", DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm 'UTC'", CultureInfo.InvariantCulture)));
+            sheet.AddSection("notes")
+                .AddNote("outlier tests are exploratory: confirm flagged values with site knowledge before exclusion (TG section 7.2).")
+                .AddNote("both tests assume normality of the data without the suspected outliers.");
+
+            if (detected.Length is >= 3 and <= 25)
+            {
+                var d = Outliers.Dixon(detected);
+                var sec = sheet.AddSection("dixon extreme value test (n <= 25)");
+                sec.ColumnsAre("tail", "observation", "statistic", "variant", "critical values");
+                sec.AddRow("low", F(d.LowValue), F(d.LowStatistic), d.Variant, "pending table (Rorabacher 1991)");
+                sec.AddRow("high", F(d.HighValue), F(d.HighStatistic), d.Variant, "pending table (Rorabacher 1991)");
+                sec.AddNote("critical values for the subrange variants are not embedded yet; compare the statistics with published tables.");
+            }
+
+            if (detected.Length >= 25)
+            {
+                try
+                {
+                    var ros = Outliers.Rosner(detected, r0);
+                    int out5 = ros.OutliersAt(0.05);
+                    int out1 = ros.OutliersAt(0.01);
+                    var sec = sheet.AddSection($"rosner test (n >= 25, up to {ros.MaxOutliers} outliers)");
+                    sec.ColumnsAre("#", "remaining", "mean", "sd", "potential outlier", "R", "crit 5%", "crit 1%");
+                    foreach (var st in ros.Steps)
+                        sec.AddRow(st.Stage.ToString(), st.Remaining.ToString(), F(st.Mean), F(st.Sd),
+                            F(st.Value), F(st.R), F(st.Critical5), F(st.Critical1));
+                    sec.AddNote($"at 5%: {out5} potential outliers; at 1%: {out1} potential outliers " +
+                                "(critical values: generalized ESD formulation, within ~3% of the Rosner tables).");
+                }
+                catch (ArgumentException ex)
+                {
+                    Console.Error.WriteLine($"warning: {s.PointId}/{s.Parameter}: Rosner: {ex.Message}");
+                }
+            }
+
+            Console.Write(sheet.RenderText());
+            series++;
+        }
+        Console.WriteLine($"({series} series processed.)");
+        return 0;
+    }
+
+    private static int RunTest1(string[] args)
+    {
+        double cs = double.NaN, alpha = 0.05;
+        bool lowerTail = false;
+        string test = "t";
+        var rest = new List<string>();
+        for (int i = 0; i < args.Length; i++)
+        {
+            switch (args[i])
+            {
+                case "--cs" when i + 1 < args.Length:
+                    cs = double.Parse(args[++i], CultureInfo.InvariantCulture); break;
+                case "--alpha" when i + 1 < args.Length:
+                    alpha = double.Parse(args[++i], CultureInfo.InvariantCulture); break;
+                case "--test" when i + 1 < args.Length:
+                    test = args[++i]; break;
+                case "--lower":
+                    lowerTail = true; break;
+                default:
+                    rest.Add(args[i]); break;
+            }
+        }
+        if (double.IsNaN(cs)) throw new FormatException("--cs <value> (comparison value) is required");
+        var spec = InputSpec.Parse(rest.ToArray());
+
+        int series = 0;
+        foreach (var s in spec.ReadSeries())
+        {
+            double[] detected = s.DetectedValues();
+            var sheet = new ReportSheet($"OpenUCL {Version} — ONE-SAMPLE HYPOTHESIS TESTS (alpha = {alpha:G2}, Cs = {cs.ToString("G6", CultureInfo.InvariantCulture)})");
+            sheet.Header.Add(("series", $"{s.PointId} / {s.Parameter}    n (detects) = {detected.Length}    ND = {s.NondetectCount}"));
+            sheet.Header.Add(("generated", DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm 'UTC'", CultureInfo.InvariantCulture)));
+
+            var sec = sheet.AddSection("one-sample tests");
+            sec.ColumnsAre("test", "form", "statistic", "p (one-sided)", "reject H0");
+            try
+            {
+                var t = OneSampleTests.TTest(detected, cs, !lowerTail, alpha);
+                sec.AddRow("Student's t", t.TestForm, F(t.Statistic), F(t.PValueOneSided), t.RejectNull ? "yes" : "no");
+            }
+            catch (ArgumentException ex) { sec.AddRow("Student's t", "-", "-", "-", $"n/a: {ex.Message}"); }
+            try
+            {
+                var sg = OneSampleTests.SignTest(detected, cs, !lowerTail, alpha);
+                sec.AddRow("sign (exact binomial)", sg.TestForm, sg.Statistic.ToString(CultureInfo.InvariantCulture), F(sg.PValueOneSided), sg.RejectNull ? "yes" : "no");
+            }
+            catch (ArgumentException ex) { sec.AddRow("sign (exact binomial)", "-", "-", "-", $"n/a: {ex.Message}"); }
+            try
+            {
+                var w = OneSampleTests.WilcoxonSignedRank(detected, cs, !lowerTail, alpha);
+                sec.AddRow("Wilcoxon signed-rank (exact)", w.TestForm, F(w.Statistic), F(w.PValueOneSided), w.RejectNull ? "yes" : "no");
+            }
+            catch (ArgumentException ex) { sec.AddRow("Wilcoxon signed-rank (exact)", "-", "-", "-", $"n/a: {ex.Message}"); }
+            sec.AddNote($"form 1: HA mean < Cs; form 2: HA mean > Cs. Selected: {(lowerTail ? "form 1" : "form 2")}.");
+
+            Console.Write(sheet.RenderText());
+            series++;
+        }
+        Console.WriteLine($"({series} series processed.)");
+        return 0;
+    }
+
     private static string F(double? v) => v?.ToString("G6", CultureInfo.InvariantCulture) ?? "-";
 
     private static string Truncate(string s, int max) => s.Length <= max ? s : s[..(max - 1)] + "~";
@@ -744,6 +876,9 @@ internal static class Program
                                     Lilliefors; --gamma for the gamma EDF tests)
               ndstats <file>        estimates with nondetects: DL/2, Kaplan-Meier, LROS, GROS
               ucl <file>            UCL/EPC suite per series with recommendation sheet
+              btv <file>            background threshold values (percentiles, UPL, UTL, USL)
+              outlier <file>        Dixon (n<=25) and Rosner (n>=25) outlier tests
+              test1 <file>          one-sample tests vs Cs (t, sign, Wilcoxon), --cs required
 
             input formats:
               packed (default)      one series per row: point, parameter, "v1;v2;..."
