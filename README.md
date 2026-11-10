@@ -90,9 +90,32 @@ Validated against the worked examples of the public ProUCL 5.2 Technical Guide
 - **Outlier tests** — Dixon (n ≤ 25) and Rosner (n ≥ 25)
 - **One-sample hypothesis tests** — Student's t, exact sign test, exact
   Wilcoxon signed-rank
+- **Two-sample hypothesis tests** — Student's t (pooled), Satterthwaite,
+  Wilcoxon-Mann-Whitney, F test, Gehan, Tarone-Ware (with nondetects)
+- **ANOVA & trend** — one-way ANOVA, Kruskal-Wallis, Mann-Kendall, Theil-Sen, OLS
+- **Historical methods** — MVUE of the lognormal mean (Finney/Bradu-Mundlak),
+  Chebyshev (MVUE), Hall's skewness-adjusted bootstrap
 
-Coming next: two-sample tests (t, Satterthwaite, WMW, Gehan, Tarone-Ware), ANOVA,
-trend analysis (Mann-Kendall, Theil-Sen), XLSX batch reports, full GUI, graphs.
+## Roadmap to 1.0-beta
+
+| Macrophase | Subtasks | Status |
+|---|---|---|
+| ✅ **Data engine** | packed format, ProUCL-compatible long layout, CSV/XLSX/XLS | v0.2–v0.7 |
+| ✅ **Descriptive stats & GOF** | normal/lognormal/gamma, Shapiro-Wilk, Lilliefors, A-D | v0.2 |
+| ✅ **UCLs/EPCs** | t, modified-t, CLT, gamma, bootstrap, KM, ROS, Land & Hall planned | v0.5–v0.11 |
+| ✅ **Background values** | percentiles, UPL1/UPLk, UTL 95-95, USL, KM-based with NDs | v0.7–v0.10 |
+| ✅ **Outlier tests** | Dixon (exact critical values), Rosner | v0.8 |
+| ✅ **Hypothesis tests** | one- & two-sample, with nondetects, ANOVA/Kruskal-Wallis, trend | v0.8–v0.10 |
+| ✅ **Historical methods** | MVUE, Chebyshev (MVUE), Hall's bootstrap | v0.11 |
+| 🔄 **Land's H-UCL & parametric USLs** | Land's polar integration, d2max critical values | in progress |
+| ⬜ **Batch output & XLSX reports** | per-series sheets, summary tables, bundle mode | planned |
+| ⬜ **Desktop GUI** | analysis modules for the downloadable shell | planned |
+| ⬜ **Graphs** | Q-Q plots, box plots, histograms, time series | planned |
+| ⬜ **Validation campaign → 1.0.0-beta** | 28 ProUCL reference data sets, side-by-side comparison | planned |
+
+Every phase ships runnable CLI executables — see the
+[Releases](https://github.com/fanellomiramare/OpenUCL/releases) page for the
+version-by-version changelog.
 
 ## Documentation
 
