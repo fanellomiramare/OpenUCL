@@ -6,7 +6,7 @@ namespace OpenUCL.Cli;
 
 internal static class Program
 {
-    private const string Version = "0.9.0";
+    private const string Version = "0.10.0";
 
     public static int Main(string[] args)
     {
@@ -33,6 +33,7 @@ internal static class Program
                 "outlier" => RunOutlier(args[1..]),
                 "test1" => RunTest1(args[1..]),
                 "test2" => RunTest2(args[1..]),
+                "anova" => RunAnova(args[1..]),
                 "trend" => RunTrend(args[1..]),
                 "dump" => RunDump(args[1..]),
                 _ => UnknownCommand(args[0]),
@@ -723,6 +724,41 @@ internal static class Program
             usl.AddRow("USL nonparametric (max)", F(b.UslNonparametric), "TG section 3.6; use only on outlier-free single populations");
             usl.AddNote("parametric USLs require the Singh (1993) d2max critical values and are not included yet.");
 
+            if (s.NondetectCount > 0)
+            {
+                try
+                {
+                    var bn = BtvWithNd.Compute(s.Observations, cc, coverage, k);
+                    var ndSec = sheet.AddSection("btvs accounting for nondetects (KM estimates)");
+                    ndSec.ColumnsAre("limit", "value", "reference");
+                    ndSec.AddRow("KM mean / sd", F(bn.KmMean), "TG eq. 4-1..4-3");
+                    ndSec.AddRow($"UPL1 normal-KM", F(bn.UplNormal1), "TG eq. 5-1");
+                    ndSec.AddRow($"UPL{b.FutureK} normal-KM (Bonferroni)", F(bn.UplNormalK), "TG 3.5.5 on KM estimates");
+                    ndSec.AddRow($"UPL{b.FutureK} mean of k, normal-KM", F(bn.UplNormalKMean), "t(1-a) * KM sd * sqrt(1/k + 1/n)");
+                    ndSec.AddRow("UPL1 Chebyshev-KM", F(bn.UplChebyshev), "TG eq. 5-2; conservative");
+                    if (b.LognormalApplicable)
+                    {
+                        ndSec.AddRow("percentile normal-KM", F(bn.PercentileNormal), "TG eq. 5-3");
+                        ndSec.AddRow("percentile lognormal-KM", F(bn.PercentileLognormal), "TG 5.3.2.2");
+                        ndSec.AddRow("UTL95-95 normal-KM", F(bn.UtlNormal), "TG eq. 5-4");
+                        ndSec.AddRow("UTL95-95 lognormal-KM", F(bn.UtlLognormal), "TG 5.3.3.2");
+                    }
+                    if (b.GammaApplicable)
+                    {
+                        ndSec.AddRow("percentile gamma WH-KM", F(bn.PercentileGammaWh), "TG 5.3.2.3 (cube-root scale)");
+                        ndSec.AddRow("percentile gamma HW-KM", F(bn.PercentileGammaHw), "TG 5.3.2.3 (fourth-root scale)");
+                        ndSec.AddRow("UTL gamma WH-KM", F(bn.UtlGammaWh), "TG 5.3.3.3 (cube-root scale)");
+                        ndSec.AddRow("UTL gamma HW-KM", F(bn.UtlGammaHw), "TG 5.3.3.3 (fourth-root scale)");
+                    }
+                    ndSec.AddNote("KM on transformed scale: detects and NDs (at their DL) are all transformed before the KM (TG 5.3.x). " +
+                                  "gamma KM percentiles via the exact chi-square route are planned; WH/HW only for now.");
+                }
+                catch (ArgumentException ex)
+                {
+                    Console.Error.WriteLine($"warning: {s.PointId}/{s.Parameter}: BTV-ND: {ex.Message}");
+                }
+            }
+
             Console.Write(sheet.RenderText());
             series++;
         }
@@ -903,9 +939,8 @@ internal static class Program
         if (rest.Count > 1 && groupCol is not null)
             throw new FormatException("provide either one file with --group-col, or two files without it");
 
-        double[] sampleA, sampleB;
+        List<ValueObservation> obsA, obsB;
         string description;
-        var options = new LongTableReadOptions();
         if (rest.Count == 1)
         {
             if (groupCol is null || groupA is null || groupB is null)
@@ -937,19 +972,23 @@ internal static class Program
                     GroupColumn = groupCol,
                 }, tableOptions).ToList();
 
-            sampleA = Pool(series.Where(s => string.Equals(s.PointId, groupA, StringComparison.OrdinalIgnoreCase)));
-            sampleB = Pool(series.Where(s => string.Equals(s.PointId, groupB, StringComparison.OrdinalIgnoreCase)));
-            description = $"{spec.File}: {groupCol} '{groupA}' (n={sampleA.Length}) vs '{groupB}' (n={sampleB.Length}), column '{valueCol ?? valueColumns[0]}'";
+            obsA = series.Where(s => string.Equals(s.PointId, groupA, StringComparison.OrdinalIgnoreCase))
+                .SelectMany(s => s.Observations).ToList();
+            obsB = series.Where(s => string.Equals(s.PointId, groupB, StringComparison.OrdinalIgnoreCase))
+                .SelectMany(s => s.Observations).ToList();
+            description = $"{spec.File}: {groupCol} '{groupA}' (n={obsA.Count}) vs '{groupB}' (n={obsB.Count}), column '{valueCol ?? valueColumns[0]}'";
         }
         else
         {
             var fileA = InputSpec.Parse(new[] { rest[0] });
             var fileB = InputSpec.Parse(new[] { rest[1] });
-            sampleA = fileA.ReadSeries().SelectMany(s => s.DetectedValues()).ToArray();
-            sampleB = fileB.ReadSeries().SelectMany(s => s.DetectedValues()).ToArray();
-            description = $"{rest[0]} (n={sampleA.Length}) vs {rest[1]} (n={sampleB.Length})";
+            obsA = fileA.ReadSeries().SelectMany(s => s.Observations).ToList();
+            obsB = fileB.ReadSeries().SelectMany(s => s.Observations).ToList();
+            description = $"{rest[0]} (n={obsA.Count}) vs {rest[1]} (n={obsB.Count})";
         }
 
+        double[] sampleA = obsA.Where(o => !o.IsNondetect).Select(o => o.Value).ToArray();
+        double[] sampleB = obsB.Where(o => !o.IsNondetect).Select(o => o.Value).ToArray();
         if (sampleA.Length < 2 || sampleB.Length < 2)
             throw new FormatException("each sample needs at least 2 observations");
 
@@ -965,6 +1004,21 @@ internal static class Program
         sec.AddRow("Satterthwaite t", ts.TestForm, F(ts.Statistic), F(ts.DegreesOfFreedom), F(ts.PValueOneSided), ts.RejectNull ? "yes" : "no");
         var w = TwoSampleTests.Wmw(sampleA, sampleB, !lowerTail, alpha);
         sec.AddRow("Wilcoxon-Mann-Whitney", w.TestForm, F(w.Statistic), "normal approx.", F(w.PValueOneSided), w.RejectNull ? "yes" : "no");
+        if (obsA.Count(o => o.IsNondetect) > 0 || obsB.Count(o => o.IsNondetect) > 0)
+        {
+            try
+            {
+                var ge = CensoredTwoSample.Gehan(obsA, obsB, !lowerTail, alpha);
+                sec.AddRow("Gehan (with NDs)", ge.TestForm, F(ge.Statistic), "normal approx.", F(ge.PValueOneSided), ge.RejectNull ? "yes" : "no");
+                var tw = CensoredTwoSample.TaroneWare(obsA, obsB, !lowerTail, alpha);
+                sec.AddRow("Tarone-Ware (with NDs)", tw.TestForm, F(tw.Statistic), "normal approx.", F(tw.PValueOneSided), tw.RejectNull ? "yes" : "no");
+                sec.AddNote("Gehan and Tarone-Ware include the nondetects at their detection limits (TG sections 6.9.2-6.9.3); both tests require >= 10 observations per sample.");
+            }
+            catch (ArgumentException ex)
+            {
+                Console.Error.WriteLine($"warning: censored two-sample tests: {ex.Message}");
+            }
+        }
         try
         {
             var (f, p2, rej, df1, df2) = TwoSampleTests.FTest(sampleA, sampleB, alpha);
@@ -991,6 +1045,91 @@ internal static class Program
             if (table.GetString(row, col).Trim().Length > 0) checked_++;
         }
         return false;
+    }
+
+    private static int RunAnova(string[] args)
+    {
+        double alpha = 0.05;
+        string? groupCol = null, valueCol = null;
+        var rest = new List<string>();
+        for (int i = 0; i < args.Length; i++)
+        {
+            switch (args[i])
+            {
+                case "--alpha" when i + 1 < args.Length:
+                    alpha = double.Parse(args[++i], CultureInfo.InvariantCulture); break;
+                case "--group-col" when i + 1 < args.Length:
+                    groupCol = args[++i]; break;
+                case "--value-col" when i + 1 < args.Length:
+                    valueCol = args[++i]; break;
+                default:
+                    rest.Add(args[i]); break;
+            }
+        }
+        if (rest.Count == 0) throw new FormatException("no input file given");
+        if (groupCol is null) throw new FormatException("--group-col <name> is required for ANOVA");
+        var spec = InputSpec.Parse(rest.ToArray());
+        var tableOptions = new LongTableReadOptions
+        {
+            ColumnSeparator = spec.ColumnSep ?? ';',
+            HasHeader = !spec.NoHeader,
+            NdFlagColumn = spec.NdFlagColumn,
+            NdFlagValue = spec.NdFlagValue,
+            DetectionLimitColumn = spec.DlColumn,
+        };
+        var table = LongTableReader.ReadTable(spec.File, tableOptions);
+        var excluded = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        if (spec.NdFlagColumn is not null) excluded.Add(spec.NdFlagColumn);
+        if (spec.DlColumn is not null) excluded.Add(spec.DlColumn);
+        var valueColumns = spec.ValueColumns.Count > 0 ? spec.ValueColumns
+            : table.Columns.Where(c => !excluded.Contains(c) && IsNumericColumn(table, c)).ToList();
+        var useCols = valueCol is not null ? new[] { valueCol } : valueColumns.ToArray();
+
+        var groupsData = new List<(string Group, double[] Values)>();
+        foreach (var colName in useCols)
+        {
+            var series = LongTableReader.ToSeries(table,
+                new SeriesSelection { ValueColumns = new[] { colName }, GroupColumn = groupCol },
+                tableOptions).ToList();
+            foreach (var grp in series.GroupBy(s => s.PointId))
+            {
+                var values = grp.SelectMany(s => s.DetectedValues()).ToArray();
+                if (values.Length >= 2)
+                    groupsData.Add(($"{grp.Key}", values));
+            }
+        }
+        if (groupsData.Count < 2)
+            throw new FormatException("ANOVA requires at least 2 groups with >= 2 detects each");
+
+        var a = Anova.Compute(groupsData.Select(g => g.Values).ToArray(), 1.0 - alpha);
+        var sheet = new ReportSheet($"OpenUCL {Version} — ONE-WAY ANOVA / KRUSKAL-WALLIS (alpha = {alpha:G2})");
+        sheet.Header.Add(("input", $"{spec.File} — {groupsData.Count} groups, {a.N} observations"));
+        sheet.Header.Add(("column(s)", string.Join(", ", useCols)));
+        sheet.Header.Add(("generated", DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm 'UTC'", CultureInfo.InvariantCulture)));
+
+        var gs = sheet.AddSection("groups");
+        gs.ColumnsAre("group", "n", "mean", "sd");
+        foreach (var (g, values) in groupsData)
+        {
+            double mean = values.Average();
+            double sd = Math.Sqrt(values.Sum(v => (v - mean) * (v - mean)) / (values.Length - 1));
+            gs.AddRow(Truncate(g, 28), values.Length.ToString(CultureInfo.InvariantCulture),
+                F(mean), F(sd));
+        }
+
+        var av = sheet.AddSection("one-way anova (classical)");
+        av.ColumnsAre("source", "SS", "df", "MS", "F", "p (upper tail)");
+        av.AddRow("between groups", F(a.SSBetween), F(a.DfBetween), F(a.SSBetween / a.DfBetween), F(a.F), F(a.PValue));
+        av.AddRow("within groups", F(a.SSWithin), F(a.DfWithin), F(a.SSWithin / a.DfWithin), "", "");
+        av.AddNote($"H0: all group means are equal; {(a.RejectNull ? $"REJECTED at {alpha:G2} (group means differ)" : $"not rejected at {alpha:G2}")}.");
+
+        var kw = sheet.AddSection("kruskal-wallis (nonparametric)");
+        kw.ColumnsAre("statistic", "df", "p (upper tail)", "tie corrected");
+        kw.AddRow("H", F(a.KwH), F(a.DfBetween), F(a.KwPValue), "yes");
+        kw.AddNote($"H0: all group locations are equal; {(a.KwRejectNull ? $"REJECTED at {alpha:G2}" : $"not rejected at {alpha:G2}")}.");
+
+        Console.Write(sheet.RenderText());
+        return 0;
     }
 
     private static int RunTrend(string[] args)
@@ -1055,6 +1194,8 @@ internal static class Program
               test1 <file>          one-sample tests vs Cs (t, sign, Wilcoxon), --cs required
               test2 <file>          two-sample tests (t, Satterthwaite, WMW, F) with --group-col
               trend <file>          Mann-Kendall, Theil-Sen and OLS trend per series
+              anova <file>          one-way ANOVA + Kruskal-Wallis across groups
+              btv <file>            also adds ND-BTV via KM when nondetects are present
 
             input formats:
               packed (default)      one series per row: point, parameter, "v1;v2;..."
