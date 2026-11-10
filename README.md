@@ -26,7 +26,12 @@ Every release ships **self-contained, single-file executables** (no runtime to i
 built automatically by CI for all three operating systems.
 👉 [Latest release](https://github.com/fanellomiramare/OpenUCL/releases/latest)
 
-| OS | CLI (batch — recommended) | GUI (preview) | Notes |
+> [!IMPORTANT]
+> **OpenUCL today works through the CLI only.**
+> The GUI download is a graphical shell under development (roadmap Phase 4):
+> it launches, but implements no analysis features yet.
+
+| OS | CLI — the working interface (batch) | GUI — shell in development | Notes |
 |---|---|---|---|
 | **Windows** | [cli-win-x64.zip](https://github.com/fanellomiramare/OpenUCL/releases/latest/download/cli-win-x64.zip) | [gui-win-x64.zip](https://github.com/fanellomiramare/OpenUCL/releases/latest/download/gui-win-x64.zip) | Windows 10+ (x64). Unzip and run — nothing to install. |
 | **macOS** | [cli-osx-universal.zip](https://github.com/fanellomiramare/OpenUCL/releases/latest/download/cli-osx-universal.zip) | [gui-osx-universal.zip](https://github.com/fanellomiramare/OpenUCL/releases/latest/download/gui-osx-universal.zip) | Native on Intel **and** Apple Silicon (universal binary). First run: right-click → *Open*, or install with the command below — no Gatekeeper warning. |
