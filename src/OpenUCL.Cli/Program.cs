@@ -6,7 +6,7 @@ namespace OpenUCL.Cli;
 
 internal static class Program
 {
-    private const string Version = "0.10.0";
+    private const string Version = "0.11.0";
 
     public static int Main(string[] args)
     {
@@ -596,6 +596,27 @@ internal static class Program
             ucls.AddRow("percentile bootstrap", F(u.PercentileBootstrap), "TG eq. 2-57");
             ucls.AddRow("BCA bootstrap", F(u.BcaBootstrap), "TG eq. 2-58..2-61");
             ucls.AddRow("bootstrap-t", F(u.BootstrapT), "TG eq. 2-62");
+            ucls.AddRow("Hall's bootstrap", F(LognormalHistorical.HallBootstrap(detected, cc, boot, seed)), "TG eq. 2-63..2-64");
+            try
+            {
+                double meanLog = 0;
+                foreach (var v in detected) meanLog += Math.Log(v);
+                meanLog /= detected.Length;
+                double sdLog = Math.Sqrt(detected.Sum(v => Math.Pow(Math.Log(v) - meanLog, 2)) / (detected.Length - 1));
+                var (mvueMean, mvueSd) = LognormalHistorical.Mvue(meanLog, sdLog, detected.Length);
+                ucls.AddRow("MVUE mean (lognormal)", F(mvueMean), "TG eq. 2-14 (Finney/Bradu-Mundlak)");
+                ucls.AddRow("MVUE sd (lognormal)", F(mvueSd), "TG eq. 2-15");
+                var mv = sheet.AddSection("chebyshev on mvue (lognormal, historical)");
+                mv.ColumnsAre("confidence", "UCL", "reference");
+                foreach (var level in new[] { 0.90, 0.95, 0.975, 0.99 })
+                    mv.AddRow($"{level * 100:G4}% Chebyshev (MVUE)",
+                        F(LognormalHistorical.ChebyshevMvueUcl(mvueMean, mvueSd, level)),
+                        "TG eq. 2-47; not recommended by ProUCL 5.2");
+            }
+            catch (Exception ex) when (ex is ArgumentException or OverflowException)
+            {
+                Console.Error.WriteLine($"warning: MVUE lognormal: {ex.Message}");
+            }
 
             var rec = sheet.AddSection("recommendation");
             rec.ColumnsAre("recommended UCL", "rationale");
