@@ -43,6 +43,11 @@ public sealed record BtvResult
     public double UtlAchievedCC { get; init; }         // exact CC achieved by the order statistic
 
     // Simultaneous limits
+    public double D2Max { get; init; }                 // Singh (1993) max-MD critical value
+    public double UslNormal { get; init; }
+    public double UslLognormal { get; init; }
+    public double UslGammaWh { get; init; }
+    public double UslGammaHw { get; init; }
     public double UslNonparametric { get; init; }      // largest observation
 }
 
@@ -140,6 +145,14 @@ public static class Btv
         double utlWh = gammaOk ? Math.Max(0.0, Math.Pow(cbrtMean + kFactor * cbrtSd, 3.0)) : double.NaN;   // eq. 3-8
         double utlHw = gammaOk ? Math.Pow(fourthMean + kFactor * fourthSd, 4.0) : double.NaN;               // eq. 3-9
 
+        // Simultaneous limits (TG 3.6): USL = statistic + d2max * dispersion,
+        // d2max = Singh (1993) critical of the max one-sided studentized deviation.
+        double d2max = D2Max(n, cc);
+        double uslNormal = mean + d2max * sd;                                              // eq. 3-20
+        double uslLog = logOk ? Math.Exp(meanLog + d2max * sdLog) : double.NaN;            // eq. 3-21
+        double uslWh = gammaOk ? Math.Max(0.0, Math.Pow(cbrtMean + d2max * cbrtSd, 3.0)) : double.NaN;
+        double uslHw = gammaOk ? Math.Pow(fourthMean + d2max * fourthSd, 4.0) : double.NaN;
+
         // Nonparametric UTL (TG 3.4.4.1): r is chosen so that the binomial cumulative
         // P(Bin(n, coverage) <= r) is as close as possible to the target CC; the UTL
         // is x(r) and the achieved CC is the F-based value of eq. 3-11 (equivalent to
@@ -167,10 +180,29 @@ public static class Btv
             UtlGammaWh = utlWh, UtlGammaHw = utlHw,
             UtlNonparametric = utlNonparam, UtlNonparametricOrder = r,
             UtlAchievedCC = achieved,
+            D2Max = d2max, UslNormal = uslNormal, UslLognormal = uslLog,
+            UslGammaWh = uslWh, UslGammaHw = uslHw,
             UslNonparametric = sorted[n - 1],
         };
 
         static int CountNonPositive(double[] values) { int c = 0; foreach (var v in values) if (v <= 0) c++; return c; }
+    }
+
+    /// <summary>
+    /// d2max critical value for the parametric USL (TG 3.6, Singh 1993): the
+    /// (1-cc) quantile of the maximum one-sided studentized deviation
+    /// max(x_i - xbar)/s, in closed form (Grubbs 1950):
+    /// d2max = (n-1)/sqrt(n) * sqrt(t^2 / (n-2+t^2)), with t = t(1-alpha/n, n-2)
+    /// (alpha = 1-cc; the alpha/n simultaneous correction over the n covered
+    /// observations). Verified against ProUCL 5.2 live: d2max(56, 95%) = 3.001
+    /// (silver-data.xls sheet); TG Example 3-1: 2.644 (n=24), 2.58 (n=21).
+    /// </summary>
+    public static double D2Max(int n, double cc)
+    {
+        if (n < 3) throw new ArgumentOutOfRangeException(nameof(n));
+        double alpha = 1.0 - cc;
+        double t = StudentT.Quantile(1.0 - alpha / n, n - 2);
+        return (n - 1.0) / Math.Sqrt(n) * Math.Sqrt(t * t / (n - 2.0 + t * t));
     }
 
     /// <summary>

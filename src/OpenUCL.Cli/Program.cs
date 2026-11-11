@@ -758,8 +758,15 @@ internal static class Program
 
             var usl = sheet.AddSection("upper simultaneous limits");
             usl.ColumnsAre("limit", "value", "reference");
+            usl.AddRow("d2max (for USL)", F(b.D2Max), "Singh (1993) max-MD critical, closed form (Grubbs 1950)");
+            usl.AddRow("USL normal", F(b.UslNormal), "TG eq. 3-20");
+            if (b.LognormalApplicable) usl.AddRow("USL lognormal", F(b.UslLognormal), "TG eq. 3-21");
+            if (b.GammaApplicable)
+            {
+                usl.AddRow("USL gamma WH", F(b.UslGammaWh), "TG section 3.6 (cube-root scale)");
+                usl.AddRow("USL gamma HW", F(b.UslGammaHw), "TG section 3.6 (fourth-root scale)");
+            }
             usl.AddRow("USL nonparametric (max)", F(b.UslNonparametric), "TG section 3.6; use only on outlier-free single populations");
-            usl.AddNote("parametric USLs require the Singh (1993) d2max critical values and are not included yet.");
 
             if (s.NondetectCount > 0)
             {

@@ -59,6 +59,26 @@ public class BtvUnitTests
     /// implementation silently underflowed for lambda > ~41 and returned
     /// garbage K (order 1e121) exactly where this claim lives.
     /// </summary>
+    /// <summary>
+    /// Golden: ProUCL 5.2 live BTV sheet on silver-data.xls (n=56, all
+    /// observations as detected, run 2026-11-11): d2max = 3.001, USL normal
+    /// 241.1, USL lognormal 343.3, USL gamma WH 129.8, HW 131.6. All our
+    /// parametric USLs match to display rounding. Data embedded; runs on CI.
+    /// </summary>
+    [Fact]
+    public void Usl_silver_n56_matches_ProUCL_live_sheet()
+    {
+        double[] silver = { 0.1,0.1,0.1,0.1,0.2,0.2,0.2,0.2,0.2,0.3,0.5,0.5,0.7,0.8,1,1,1,1,1,1,1,1,1,1,1,1,1,1.2,1.4,1.5,2,2,2,2,2,2.5,2.7,3.2,4.4,5,5,5,5,6,10,10,10,10,10,10,20,20,20,25,90,560 };
+        var b = Btv.Compute(silver, 0.95, 0.95, 1);
+
+        Assert.Equal(3.0007349, b.D2Max, 5);
+        Assert.InRange(b.UslNormal, 240.9, 241.3);       // ProUCL: 241.1
+        Assert.InRange(b.UslLognormal, 343.1, 343.6);    // ProUCL: 343.3
+        Assert.InRange(b.UslGammaWh, 129.6, 130.0);      // ProUCL: 129.8
+        Assert.InRange(b.UslGammaHw, 131.4, 131.8);      // ProUCL: 131.6
+        Assert.Equal(560, b.UslNonparametric, 0);
+    }
+
     [Fact]
     public void Tolerance_factor_n56_matches_ProUCL_live_sheet()
     {
