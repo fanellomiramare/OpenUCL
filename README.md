@@ -114,7 +114,7 @@ Validated against the worked examples of the public ProUCL 5.2 Technical Guide
 
 ## Roadmap to 1.0-beta
 
-| Phase | Macrophase | Subtasks | Status |
+| Phase | Component | Subtasks | Status |
 |---|---|---|---|
 | 1 | Data engine | packed format, ProUCL-compatible long layout, CSV/XLSX/XLS | ✅ v0.2–v0.7 |
 | 1 | Descriptive stats & GOF | normal/lognormal/gamma, Shapiro-Wilk, Lilliefors, A-D | ✅ v0.2 |
