@@ -103,4 +103,29 @@ public class TwoSampleTestsTests
         Assert.True(w.RejectNull);
         Assert.Equal(0.0293, w.PValueOneSided, 3);
     }
+
+    /// <summary>
+    /// Golden: ProUCL 5.2 live output on its sample file WMW-with ties.xls
+    /// (X3 n=24 vs Y3 n=25, many ties; run 2026-11-11): rank sum W = 396.0,
+    /// Mean(U) = 300.0, SD(U) tie-adjusted 49.97, Z = -4.093, p (HA: X3 > Y3)
+    /// = 1.000, "Do Not Reject". The printed Z is only reachable WITH the
+    /// continuity correction — ProUCL uses the same continuity + tie
+    /// corrections as this implementation. Data embedded; runs on CI.
+    /// </summary>
+    [Fact]
+    public void Wmw_with_ties_matches_ProUCL_live_output()
+    {
+        double[] x3 = { 24.5586,10.5392,17.7113,7.93195,7.93195,7.93195,21.4629,18.8272,
+                        21.641,19.0244,18.0402,28.6642,15.1515,15.1515,15.1515,15.1515,
+                        17.4147,24.3245,7.98327,31.196,31.196,22.5561,5.68741,11.7931 };
+        double[] y3 = { 54.3944,46.8155,48.4208,48.4208,40.2891,34.8069,44.626,45.2161,
+                        17.5758,17.5758,17.5758,17.5758,39.0823,39.5292,33.0835,71.7727,
+                        33.0923,1.84993,1.84993,79.064,53.3384,48.8915,48.8915,46.3609,
+                        64.9721 };
+
+        var w = TwoSampleTests.Wmw(x3, y3, upperTail: true);
+        Assert.Equal(-4.092925, w.Statistic, 5);
+        Assert.Equal(0.999979, w.PValueOneSided, 5);
+        Assert.False(w.RejectNull);
+    }
 }
