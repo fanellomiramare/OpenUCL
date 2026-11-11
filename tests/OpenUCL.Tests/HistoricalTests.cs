@@ -44,6 +44,30 @@ public class FinneyAndMvueTests
         Assert.InRange(LognormalHistorical.ChebyshevMvueUcl(mvueMean, se, 0.975), 23.99, 24.01);
         Assert.InRange(LognormalHistorical.ChebyshevMvueUcl(mvueMean, se, 0.99), 33.58, 33.60);
     }
+
+    /// <summary>
+    /// Chebyshev (MVUE) on the silver data set WITHOUT the outlier 560
+    /// (n=55, meanlog 0.495774, sdlog 1.576629): ProUCL 5.2 live sheet
+    /// (2026-11-11): 90% 10.13, 95% 12.26, 97.5% 15.22, 99% 21.04 —
+    /// identical to TG Table 2-4 (12.26 at 95%). Second independent
+    /// confirmation of the SE-based formula.
+    /// </summary>
+    [Fact]
+    public void Chebyshev_mvue_on_silver_no_outlier_matches_ProUCL_live_sheet()
+    {
+        double meanLog = 0.495774, sdLog = 1.576629;
+        int n = 55;
+        var (mvueMean, _) = LognormalHistorical.Mvue(meanLog, sdLog, n);
+        double se = LognormalHistorical.MvueSe(meanLog, sdLog, n);
+
+        Assert.Equal(5.424097, mvueMean, 5);
+        Assert.Equal(1.569258, se, 5);
+
+        Assert.InRange(LognormalHistorical.ChebyshevMvueUcl(mvueMean, se, 0.90), 10.12, 10.14);
+        Assert.InRange(LognormalHistorical.ChebyshevMvueUcl(mvueMean, se, 0.95), 12.25, 12.27);
+        Assert.InRange(LognormalHistorical.ChebyshevMvueUcl(mvueMean, se, 0.975), 15.21, 15.23);
+        Assert.InRange(LognormalHistorical.ChebyshevMvueUcl(mvueMean, se, 0.99), 21.03, 21.05);
+    }
 }
 
 public class HallBootstrapTests
