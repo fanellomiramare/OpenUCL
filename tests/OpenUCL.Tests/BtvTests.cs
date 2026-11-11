@@ -49,6 +49,24 @@ public class BtvUnitTests
         Assert.True(Btv.AchievedCC(24, 1, 0.95) < 1e-20);
     }
 
+    /// <summary>
+    /// Golden: ProUCL 5.2 live BTV sheet on silver-data.xls (n=56, all
+    /// observations as detected, run 2026-11-11): Tolerance Factor K = 2.032.
+    /// Our exact noncentral-t K = 2.037739 (+0.28%): ProUCL computes K with
+    /// the Natrella approximation for n > 30, which converges to the exact
+    /// value as n grows. DISCOVERY: the exact K for n > 31 requires the
+    /// log-space Poisson mixture in NoncentralT.Cdf — the pre-2026-11-11
+    /// implementation silently underflowed for lambda > ~41 and returned
+    /// garbage K (order 1e121) exactly where this claim lives.
+    /// </summary>
+    [Fact]
+    public void Tolerance_factor_n56_matches_ProUCL_live_sheet()
+    {
+        double k = NoncentralT.ToleranceFactor(56, 0.95, 0.95);
+        Assert.Equal(2.037739, k, 5);
+        Assert.InRange(k, 2.02, 2.06);   // ProUCL (Natrella approx.): 2.032
+    }
+
     [Fact]
     public void Nonparametric_upl_uses_n_plus_one_position()
     {

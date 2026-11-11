@@ -20,16 +20,23 @@ public static class NoncentralT
         if (df <= 0) throw new ArgumentOutOfRangeException(nameof(df));
         double lambda = 0.5 * delta * delta;
         double x = t * t / (t * t + df);
-        double sum = 0, weight = Math.Exp(-lambda);
-        // Poisson mixture; weights decay factorially — 200 terms is ample for |delta| < 40.
-        for (int j = 0; j < 400; j++)
+        double sum = 0;
+        // Poisson weights e^(-lambda) * lambda^j / j! computed in log space:
+        // the significant terms cluster around j = lambda, where the weight is
+        // O(1/sqrt(lambda)) — starting from j=0 with weight e^(-lambda) would
+        // underflow for lambda > ~41 (n > ~31 for the tolerance factor) and
+        // silently zero the whole mixture.
+        int jMax = Math.Max(400, (int)(lambda + 10 * Math.Sqrt(lambda) + 50));
+        for (int j = 0; j < jMax; j++)
         {
+            double logW = j == 0 ? -lambda
+                : -lambda + j * Math.Log(lambda) - SpecialFunctions.LogGamma(j + 1.0);
+            double weight = logW > -700 ? Math.Exp(logW) : 0.0;
             double term = t >= 0
                 ? SpecialFunctions.BetaI(x, j + 0.5, df / 2.0)
                 : 1.0 - SpecialFunctions.BetaI(x, df / 2.0, j + 0.5);
             sum += weight * term;
-            if (weight < 1e-18) break;
-            weight *= lambda / (j + 1.0);
+            if (j > lambda && weight < 1e-20) break;
         }
         return Math.Min(Math.Max(sum, 0.0), 1.0);
     }
