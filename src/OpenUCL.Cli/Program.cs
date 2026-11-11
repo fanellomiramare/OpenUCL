@@ -6,7 +6,7 @@ namespace OpenUCL.Cli;
 
 internal static class Program
 {
-    private const string Version = "0.11.0";
+    private const string Version = "0.12.0";
 
     public static int Main(string[] args)
     {
@@ -612,6 +612,20 @@ internal static class Program
                     mv.AddRow($"{level * 100:G4}% Chebyshev (MVUE)",
                         F(LognormalHistorical.ChebyshevMvueUcl(mvueMean, mvueSd, level)),
                         "TG eq. 2-47; not recommended by ProUCL 5.2");
+
+                // Land's H-UCL (TG eq. 2-36; EPA/OSWER 9285.6-10 exhibits 3-4).
+                // H is computed exactly by polar integration of the conditional-t
+                // density. ProUCL instead interpolates Land's (1975) tables (only
+                // the 90%/95% levels), which agree with the exact values within
+                // table precision for n up to ~31 but inflate H by 5-7% for larger
+                // n (silver data set, n=55-56).
+                double hLand = LandExact.LandCriticalH(detected.Length, sdLog, cc);
+                double landUcl = LandExact.LandUcl(meanLog, sdLog, detected.Length, cc);
+                var land = sheet.AddSection("land h-ucl (lognormal, historical)");
+                land.ColumnsAre("quantity", "value", "reference");
+                land.AddRow($"Land H factor ({cc * 100:G4}%)", F(hLand),
+                    "exact (Land 1975; polar integration of the conditional t)");
+                land.AddRow($"{cc * 100:G4}% Land H-UCL", F(landUcl), "TG eq. 2-36");
             }
             catch (Exception ex) when (ex is ArgumentException or OverflowException)
             {

@@ -7,7 +7,14 @@ namespace OpenUCL.Core;
 /// </summary>
 public static class NoncentralT
 {
-    /// <summary>CDF P(T' &lt;= t) with df degrees of freedom and noncentrality delta.</summary>
+    /// <summary>
+    /// CDF representation used by the mixture formula. For t &gt;= 0 this is the
+    /// CDF of |T'| (doubled form: at delta = 0 it returns P(|T| &lt;= t) = 2F(t)-1).
+    /// For the UTL tolerance factor (large positive delta) the missing negative
+    /// tail P(T' &lt; -t) is ~1e-9, so K matches the exact Hahn-Meeker values.
+    /// Do not call Cdf/Quantile directly as a one-sided noncentral-t distribution;
+    /// use StudentT for central quantiles.
+    /// </summary>
     public static double Cdf(double t, double df, double delta)
     {
         if (df <= 0) throw new ArgumentOutOfRangeException(nameof(df));

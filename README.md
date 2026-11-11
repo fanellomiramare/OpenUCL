@@ -94,7 +94,10 @@ Validated against the worked examples of the public ProUCL 5.2 Technical Guide
   Wilcoxon-Mann-Whitney, F test, Gehan, Tarone-Ware (with nondetects)
 - **ANOVA & trend** — one-way ANOVA, Kruskal-Wallis, Mann-Kendall, Theil-Sen, OLS
 - **Historical methods** — MVUE of the lognormal mean (Finney/Bradu-Mundlak),
-  Chebyshev (MVUE), Hall's skewness-adjusted bootstrap
+  Chebyshev (MVUE), Hall's skewness-adjusted bootstrap, Land's exact H-UCL
+  (1975 conditional-t polar integration; ProUCL computes the same statistic by
+  table interpolation, which deviates from the exact values for sample sizes
+  beyond the table range)
 
 ## Roadmap to 1.0-beta
 
@@ -106,8 +109,8 @@ Validated against the worked examples of the public ProUCL 5.2 Technical Guide
 | ✅ **Background values** | percentiles, UPL1/UPLk, UTL 95-95, USL, KM-based with NDs | v0.7–v0.10 |
 | ✅ **Outlier tests** | Dixon (exact critical values), Rosner | v0.8 |
 | ✅ **Hypothesis tests** | one- & two-sample, with nondetects, ANOVA/Kruskal-Wallis, trend | v0.8–v0.10 |
-| ✅ **Historical methods** | MVUE, Chebyshev (MVUE), Hall's bootstrap | v0.11 |
-| 🔄 **Land's H-UCL & parametric USLs** | Land's polar integration, d2max critical values | in progress |
+| ✅ **Historical methods** | MVUE, Chebyshev (MVUE), Hall's bootstrap, Land's exact H-UCL | v0.11–v0.12 |
+| ⬜ **Parametric USLs** | d2max critical values, USL with nondetects | planned |
 | ⬜ **Batch output & XLSX reports** | per-series sheets, summary tables, bundle mode | planned |
 | ⬜ **Desktop GUI** | analysis modules for the downloadable shell | planned |
 | ⬜ **Graphs** | Q-Q plots, box plots, histograms, time series | planned |
