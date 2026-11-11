@@ -8,7 +8,6 @@ of the methods made popular by the U.S. EPA **ProUCL 5.2** software, designed fo
 
 [![CI](https://github.com/fanellomiramare/OpenUCL/actions/workflows/ci.yml/badge.svg)](https://github.com/fanellomiramare/OpenUCL/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/fanellomiramare/OpenUCL)](https://github.com/fanellomiramare/OpenUCL/releases/latest)
-[![Downloads](https://img.shields.io/github/downloads/fanellomiramare/OpenUCL/total)](https://github.com/fanellomiramare/OpenUCL/releases)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 
 **Download** — [Windows](#download) · [macOS](#download) · [Linux](#download) · [All releases](https://github.com/fanellomiramare/OpenUCL/releases)
