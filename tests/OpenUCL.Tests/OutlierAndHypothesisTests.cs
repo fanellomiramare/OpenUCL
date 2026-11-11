@@ -85,6 +85,32 @@ public class RosnerTests
         Assert.Equal(2, ros.OutliersAt(0.01));
     }
 
+    /// <summary>
+    /// Golden: ProUCL 5.2 live output on its sample file Al-with-Outlier.xls
+    /// (Rosner, n=28, 1 suspected outlier 30000 at observation 26):
+    /// mean 10284, row sd 7315, R = 2.695, critical 2.880 (5%) / 3.200 (1%),
+    /// verdict "no potential outlier" at both levels. Our exact generalized-ESD
+    /// critical values sit ~0.15% above ProUCL's tabulated ones (2.884/3.205)
+    /// with the identical verdict. Data embedded so the test runs on CI.
+    /// </summary>
+    [Fact]
+    public void Aluminum_rosner_matches_ProUCL_live_output()
+    {
+        double[] al = { 6280, 3830, 3900, 5130, 9310, 15300, 9730, 7840, 10400,
+                        16200, 6350, 10700, 15400, 12500, 2850, 9040, 2700, 1710,
+                        3430, 6790, 11600, 4110, 7230, 4610, 25000, 30000, 24000, 22000 };
+        var ros = Outliers.Rosner(al, 10);
+
+        Assert.Equal(10283.6, ros.Steps[0].Mean, 1);
+        Assert.Equal(7314.89, ros.Steps[0].Sd, 1);
+        Assert.Equal(30000, ros.Steps[0].Value, 0);
+        Assert.Equal(2.6954, ros.Steps[0].R, 3);
+        Assert.InRange(ros.Steps[0].Critical5, 2.878, 2.890);  // ProUCL table: 2.880
+        Assert.InRange(ros.Steps[0].Critical1, 3.198, 3.212);  // ProUCL table: 3.200
+        Assert.Equal(0, ros.OutliersAt(0.05));
+        Assert.Equal(0, ros.OutliersAt(0.01));
+    }
+
     private static bool IsNumeric(LongTable table, string column)
     {
         int col = table.ColumnIndex(column);
