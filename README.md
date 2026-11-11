@@ -28,8 +28,9 @@ built automatically by CI for all three operating systems.
 
 > [!IMPORTANT]
 > **OpenUCL today works through the CLI only.**
-> The GUI download is a graphical shell under development (roadmap Phase 4):
-> it launches, but implements no analysis features yet.
+> The GUI download is a graphical shell under development
+> (roadmap Phase 4 — reporting & desktop GUI): it launches,
+> but implements no analysis features yet.
 
 | OS | CLI — the working interface (batch) | GUI — shell in development | Notes |
 |---|---|---|---|
@@ -113,20 +114,24 @@ Validated against the worked examples of the public ProUCL 5.2 Technical Guide
 
 ## Roadmap to 1.0-beta
 
-| Macrophase | Subtasks | Status |
-|---|---|---|
-| ✅ **Data engine** | packed format, ProUCL-compatible long layout, CSV/XLSX/XLS | v0.2–v0.7 |
-| ✅ **Descriptive stats & GOF** | normal/lognormal/gamma, Shapiro-Wilk, Lilliefors, A-D | v0.2 |
-| ✅ **UCLs/EPCs** | t, modified-t, CLT, gamma, bootstrap, KM, ROS, Land, Hall | v0.5–v0.12 |
-| ✅ **Background values** | percentiles, UPL1/UPLk, UTL 95-95, USL, KM-based with NDs | v0.7–v0.10 |
-| ✅ **Outlier tests** | Dixon (exact critical values), Rosner | v0.8 |
-| ✅ **Hypothesis tests** | one- & two-sample, with nondetects, ANOVA/Kruskal-Wallis, trend | v0.8–v0.10 |
-| ✅ **Historical methods** | MVUE, Chebyshev (MVUE), Hall's bootstrap, Land's exact H-UCL | v0.11–v0.12 |
-| ⬜ **Parametric USLs** | d2max critical values, USL with nondetects | planned |
-| ⬜ **Batch output & XLSX reports** | per-series sheets, summary tables, bundle mode | planned |
-| ⬜ **Desktop GUI** | analysis modules for the downloadable shell | planned |
-| ⬜ **Graphs** | Q-Q plots, box plots, histograms, time series | planned |
-| ⬜ **Validation campaign → 1.0.0-beta** | 28 ProUCL reference data sets, side-by-side comparison | planned |
+| Phase | Macrophase | Subtasks | Status |
+|---|---|---|---|
+| 1 | Data engine | packed format, ProUCL-compatible long layout, CSV/XLSX/XLS | ✅ v0.2–v0.7 |
+| 1 | Descriptive stats & GOF | normal/lognormal/gamma, Shapiro-Wilk, Lilliefors, A-D | ✅ v0.2 |
+| 2 | UCLs/EPCs | t, modified-t, CLT, gamma, bootstrap, KM, ROS, Land, Hall | ✅ v0.5–v0.12 |
+| 2 | Background values | percentiles, UPL1/UPLk, UTL 95-95, USL, KM-based with NDs | ✅ v0.7–v0.10 |
+| 2 | Parametric USLs | d2max critical values, USL with nondetects | ⬜ planned |
+| 3 | Outlier tests | Dixon (exact critical values), Rosner | ✅ v0.8 |
+| 3 | Hypothesis tests | one- & two-sample, with nondetects, ANOVA/Kruskal-Wallis, trend | ✅ v0.8–v0.10 |
+| 3 | Historical methods | MVUE, Chebyshev (MVUE), Hall's bootstrap, Land's exact H-UCL | ✅ v0.11–v0.12 |
+| 4 | Batch output & XLSX reports | per-series sheets, summary tables, bundle mode | ⬜ planned |
+| 4 | Desktop GUI | analysis modules for the downloadable shell | ⬜ planned |
+| 5 | Graphs | Q-Q plots, box plots, histograms, time series | ⬜ planned |
+| 6 | Validation campaign → 1.0.0-beta | 28 ProUCL reference data sets, side-by-side comparison | ⬜ planned |
+
+Phases 1–3 — the statistical engine — are complete and shipping.
+The upcoming work is reporting (Phase 4), graphs (Phase 5) and the
+validation campaign that leads to 1.0.0-beta (Phase 6).
 
 Every phase ships runnable CLI executables — see the
 [Releases](https://github.com/fanellomiramare/OpenUCL/releases) page for the
