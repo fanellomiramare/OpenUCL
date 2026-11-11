@@ -31,16 +31,18 @@ size is effectively bounded only by disk space (and each single series must fit 
 
 ## Example (semicolon-separated CSV, packed)
 
+The values cell contains the column separator, so it **must be quoted** (any CSV writer does
+this automatically):
+
 ```csv
 point;parameter;values
-MW-01;TCE;1.2;0.8;<0.5;2.1;3.3
-MW-02;TCE;<0.5;0.9;1.4
-MW-01;PCE;4.0;4.5;5.1;4.2
+MW-01;TCE;"1.2;0.8;<0.5;2.1;3.3"
+MW-02;TCE;"<0.5;0.9;1.4"
+MW-01;PCE;"4.0;4.5;5.1;4.2"
 ```
 
-Here the CSV column separator is `;` **and** the value separator is `;`; the third field is
-quoted automatically by any CSV writer when it contains the column separator. To avoid any
-ambiguity in hand-written files, prefer `|` as value separator:
+In hand-written files an unquoted cell with `;` inside is read as a **single value** (the
+first one only). To avoid the quotes entirely, prefer `|` as value separator:
 
 ```csv
 point;parameter;values

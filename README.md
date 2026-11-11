@@ -81,13 +81,13 @@ agree to display precision; outside that range, OpenUCL remains exact.
 | Method | ProUCL 5.2 | OpenUCL |
 |---|---|---|
 | Land's H-UCL | H interpolated from Land's (1975) tables; 90% and 95% levels only | exact H for any sample size and confidence level (conditional-t polar integration) |
-| UTL tolerance factor K | tabulated values for n ≤ 30, Natrella approximation for larger n | exact noncentral-t K for any n, confidence level and coverage |
+| UTL tolerance factor K | tabulated for n ≤ 30, Natrella approximation beyond (at n = 56 it sits 0.3% below exact) | exact noncentral-t K for any n, confidence level and coverage — no table/approximation switch |
 | Dixon outlier test | tabulated critical values (TG Appendix A) | exact critical values by integration of order-statistic ratios (n ≤ 25, any α) |
 
 ## What OpenUCL computes today
 
-Validated against the worked examples of the public ProUCL 5.2 Technical Guide
-(golden tests run on the original sample data sets):
+Validated against the worked examples of the public ProUCL 5.2 Technical Guide and
+against live ProUCL 5.2 output (golden tests run on the original sample data sets):
 
 - **Descriptive statistics** — batch over every series of a file (packed or long layout)
 - **Goodness of fit** — Shapiro-Wilk (Royston AS R94), Lilliefors K-S; gamma
@@ -96,7 +96,8 @@ Validated against the worked examples of the public ProUCL 5.2 Technical Guide
   approximate and adjusted gamma, bootstrap (standard, percentile, BCA, bootstrap-t),
   with and without nondetects (KM, LROS, GROS), with ProUCL 5.2 recommendation logic
 - **Background values (BTVs)** — upper percentiles, UPL1/UPLk/UPLk-mean, UTL 95-95
-  (exact noncentral-t tolerance factor), nonparametric limits with achieved confidence
+  (exact noncentral-t tolerance factor), USLs for full and censored data sets
+  (normal, lognormal, gamma WH/HW), nonparametric limits with achieved confidence
 - **Nondetect estimation** — Kaplan-Meier (validated against the Technical Guide's
   Oahu example), robust ROS (LROS/GROS) with Helsel-Cohn plotting positions, DL/2
 - **Outlier tests** — Dixon (n ≤ 25) and Rosner (n ≥ 25)
@@ -119,7 +120,7 @@ Validated against the worked examples of the public ProUCL 5.2 Technical Guide
 | 1 | Descriptive stats & GOF | normal/lognormal/gamma, Shapiro-Wilk, Lilliefors, A-D | ✅ v0.2 |
 | 2 | UCLs/EPCs | t, modified-t, CLT, gamma, bootstrap, KM, ROS, Land, Hall | ✅ v0.5–v0.12 |
 | 2 | Background values | percentiles, UPL1/UPLk, UTL 95-95, USL, KM-based with NDs | ✅ v0.7–v0.10 |
-| 2 | Parametric USLs | d2max critical values, USL with nondetects | ⬜ planned |
+| 2 | Parametric USLs | d2max critical values, USL with nondetects | ✅ v0.14 |
 | 3 | Outlier tests | Dixon (exact critical values), Rosner | ✅ v0.8 |
 | 3 | Hypothesis tests | one- & two-sample, with nondetects, ANOVA/Kruskal-Wallis, trend | ✅ v0.8–v0.10 |
 | 3 | Historical methods | MVUE, Chebyshev (MVUE), Hall's bootstrap, Land's exact H-UCL | ✅ v0.11–v0.12 |
