@@ -37,8 +37,8 @@ public static class CensoredTwoSample
         IReadOnlyList<ValueObservation> background, bool upperTail, double alpha, bool taroneWare)
     {
         int m = background.Count, n = site.Count;
-        if (m < 10 || n < 10)
-            throw new ArgumentException("Gehan/Tarone-Ware require at least 10 observations per sample (normal approximation).");
+        if (m < 2 || n < 2)
+            throw new ArgumentException("Gehan/Tarone-Ware require at least 2 observations per sample.");
         int total = m + n;
 
         var pooled = site.Select(o => (o.Value, IsDetect: !o.IsNondetect, h: 1))

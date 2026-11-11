@@ -1043,18 +1043,11 @@ internal static class Program
         sec.AddRow("Wilcoxon-Mann-Whitney", w.TestForm, F(w.Statistic), "normal approx.", F(w.PValueOneSided), w.RejectNull ? "yes" : "no");
         if (obsA.Count(o => o.IsNondetect) > 0 || obsB.Count(o => o.IsNondetect) > 0)
         {
-            try
-            {
-                var ge = CensoredTwoSample.Gehan(obsA, obsB, !lowerTail, alpha);
-                sec.AddRow("Gehan (with NDs)", ge.TestForm, F(ge.Statistic), "normal approx.", F(ge.PValueOneSided), ge.RejectNull ? "yes" : "no");
-                var tw = CensoredTwoSample.TaroneWare(obsA, obsB, !lowerTail, alpha);
-                sec.AddRow("Tarone-Ware (with NDs)", tw.TestForm, F(tw.Statistic), "normal approx.", F(tw.PValueOneSided), tw.RejectNull ? "yes" : "no");
-                sec.AddNote("Gehan and Tarone-Ware include the nondetects at their detection limits (TG sections 6.9.2-6.9.3); both tests require >= 10 observations per sample.");
-            }
-            catch (ArgumentException ex)
-            {
-                Console.Error.WriteLine($"warning: censored two-sample tests: {ex.Message}");
-            }
+            var ge = CensoredTwoSample.Gehan(obsA, obsB, !lowerTail, alpha);
+            sec.AddRow("Gehan (with NDs)", ge.TestForm, F(ge.Statistic), "normal approx.", F(ge.PValueOneSided), ge.RejectNull ? "yes" : "no");
+            var tw = CensoredTwoSample.TaroneWare(obsA, obsB, !lowerTail, alpha);
+            sec.AddRow("Tarone-Ware (with NDs)", tw.TestForm, F(tw.Statistic), "normal approx.", F(tw.PValueOneSided), tw.RejectNull ? "yes" : "no");
+            sec.AddNote("Gehan and Tarone-Ware include the nondetects at their detection limits (TG sections 6.9.2-6.9.3); the normal approximation is unreliable below 10 observations per sample.");
         }
         try
         {
