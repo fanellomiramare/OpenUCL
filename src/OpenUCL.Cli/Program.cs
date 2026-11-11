@@ -604,14 +604,16 @@ internal static class Program
                 meanLog /= detected.Length;
                 double sdLog = Math.Sqrt(detected.Sum(v => Math.Pow(Math.Log(v) - meanLog, 2)) / (detected.Length - 1));
                 var (mvueMean, mvueSd) = LognormalHistorical.Mvue(meanLog, sdLog, detected.Length);
+                double mvueSe = LognormalHistorical.MvueSe(meanLog, sdLog, detected.Length);
                 ucls.AddRow("MVUE mean (lognormal)", F(mvueMean), "TG eq. 2-14 (Finney/Bradu-Mundlak)");
                 ucls.AddRow("MVUE sd (lognormal)", F(mvueSd), "TG eq. 2-15");
+                ucls.AddRow("MVUE SE (lognormal)", F(mvueSe), "TG eq. 2-16 (SE of the MVUE mean)");
                 var mv = sheet.AddSection("chebyshev on mvue (lognormal, historical)");
                 mv.ColumnsAre("confidence", "UCL", "reference");
                 foreach (var level in new[] { 0.90, 0.95, 0.975, 0.99 })
                     mv.AddRow($"{level * 100:G4}% Chebyshev (MVUE)",
-                        F(LognormalHistorical.ChebyshevMvueUcl(mvueMean, mvueSd, level)),
-                        "TG eq. 2-47; not recommended by ProUCL 5.2");
+                        F(LognormalHistorical.ChebyshevMvueUcl(mvueMean, mvueSe, level)),
+                        "TG eq. 2-47 (MVUE mean + SE); not recommended by ProUCL 5.2");
 
                 // Land's H-UCL (TG eq. 2-36; EPA/OSWER 9285.6-10 exhibits 3-4).
                 // H is computed exactly by polar integration of the conditional-t

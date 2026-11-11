@@ -76,6 +76,23 @@ public static class LognormalHistorical
         return (mvueMean, sdMvue);
     }
 
+    /// <summary>
+    /// Standard error of the MVUE mean (TG eq. 2-16, Bradu-Mundlak 1970):
+    /// se(mu1) = sqrt(exp(2*meanlog) * (g(n-1, s2/2)^2 - g(n-1, s2*(n-2)/(n-1)))).
+    /// This is the dispersion entering the Chebyshev (MVUE) UCL (TG eq. 2-47) —
+    /// NOT the MVUE of the distribution sd (eq. 2-15). Verified against the
+    /// ProUCL 5.2 live sheet on silver-data.xls (95% Chebyshev (MVUE) = 19.12).
+    /// </summary>
+    public static double MvueSe(double meanLog, double sdLog, int n)
+    {
+        if (n < 2) throw new ArgumentOutOfRangeException(nameof(n));
+        double s2 = sdLog * sdLog;
+        double gMean = FinneysG(n - 1, s2 / 2.0);
+        double varEst = Math.Exp(2.0 * meanLog)
+            * (gMean * gMean - FinneysG(n - 1, s2 * (n - 2.0) / (n - 1.0)));
+        return varEst > 0 ? Math.Sqrt(varEst) : double.NaN;
+    }
+
     /// <summary>Chebyshev UCL on the MVUEs (TG eq. 2-47).</summary>
     public static double ChebyshevMvueUcl(double mvueMean, double mvueSe, double cc = 0.95)
     {
