@@ -6,7 +6,7 @@ namespace OpenUCL.Cli;
 
 internal static class Program
 {
-    private const string Version = "0.12.0";
+    private const string Version = "0.13.0";
 
     public static int Main(string[] args)
     {
