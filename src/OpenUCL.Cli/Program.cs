@@ -794,6 +794,15 @@ internal static class Program
                         ndSec.AddRow("UTL gamma WH-KM", F(bn.UtlGammaWh), "TG 5.3.3.3 (cube-root scale)");
                         ndSec.AddRow("UTL gamma HW-KM", F(bn.UtlGammaHw), "TG 5.3.3.3 (fourth-root scale)");
                     }
+                    ndSec.AddRow($"d2max (for USL, n = {bn.N})", F(bn.D2Max), "Singh (1993) max-MD critical, closed form (Grubbs 1950)");
+                    ndSec.AddRow("USL normal-KM", F(bn.UslNormal), "TG 5.3.4.1");
+                    if (bn.LognormalApplicable) ndSec.AddRow("USL lognormal-KM", F(bn.UslLognormal), "TG 5.3.4.2");
+                    if (bn.GammaApplicable)
+                    {
+                        ndSec.AddRow("USL gamma WH-KM", F(bn.UslGammaWh), "TG 5.3.4.3 (cube-root scale)");
+                        ndSec.AddRow("USL gamma HW-KM", F(bn.UslGammaHw), "TG 5.3.4.3 (fourth-root scale)");
+                    }
+                    ndSec.AddRow("USL nonparametric (max)", F(bn.UslNonparametric), "TG 5.3.4.4; use only on outlier-free single populations");
                     ndSec.AddNote("KM on transformed scale: detects and NDs (at their DL) are all transformed before the KM (TG 5.3.x). " +
                                   "gamma KM percentiles via the exact chi-square route are planned; WH/HW only for now.");
                 }

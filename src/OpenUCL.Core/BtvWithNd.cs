@@ -41,6 +41,14 @@ public sealed record BtvNdResult
     public double UtlLognormal { get; init; }
     public double UtlGammaWh { get; init; }
     public double UtlGammaHw { get; init; }
+
+    // Simultaneous limits (TG 5.3.4)
+    public double D2Max { get; init; }
+    public double UslNormal { get; init; }
+    public double UslLognormal { get; init; }
+    public double UslGammaWh { get; init; }
+    public double UslGammaHw { get; init; }
+    public double UslNonparametric { get; init; }      // largest observation (incl. NDs at DL)
 }
 
 public static class BtvWithNd
@@ -75,10 +83,11 @@ public static class BtvWithNd
         // (detects and NDs at their DL, all transformed to y-space — TG 5.3.x).
         bool allPositive = observations.All(o => o.Value > 0);
 
-        double uplLog = double.NaN, pctLog = double.NaN, utlLog = double.NaN;
+        double uplLog = double.NaN, pctLog = double.NaN, utlLog = double.NaN, uslLog = double.NaN;
+        KmEstimates? kmLog = null;
         if (allPositive)
         {
-            var kmLog = KmTransformed(observations, v => Math.Log(v));
+            kmLog = KmTransformed(observations, v => Math.Log(v));
             if (double.IsNaN(kmLog.Mean) || double.IsNaN(kmLog.Sd)) { /* skip */ }
             else
             {
@@ -89,11 +98,12 @@ public static class BtvWithNd
         }
 
         double uplWh = double.NaN, uplHw = double.NaN, pctWh = double.NaN, pctHw = double.NaN;
-        double utlWh = double.NaN, utlHw = double.NaN;
+        double utlWh = double.NaN, utlHw = double.NaN, uslWh = double.NaN, uslHw = double.NaN;
+        KmEstimates? kmCbrt = null, kmRoot4 = null;
         if (allPositive)
         {
-            var kmCbrt = KmTransformed(observations, v => Math.Cbrt(v));
-            var kmRoot4 = KmTransformed(observations, v => Math.Pow(v, 0.25));
+            kmCbrt = KmTransformed(observations, v => Math.Cbrt(v));
+            kmRoot4 = KmTransformed(observations, v => Math.Pow(v, 0.25));
             if (!double.IsNaN(kmCbrt.Mean) && !double.IsNaN(kmCbrt.Sd))
             {
                 uplWh = Math.Max(0.0, Math.Pow(kmCbrt.Mean + t * kmCbrt.Sd * sqrt1p, 3.0));
@@ -107,6 +117,16 @@ public static class BtvWithNd
                 utlHw = Math.Pow(kmRoot4.Mean + kFactor * kmRoot4.Sd, 4.0);
             }
         }
+
+        // Simultaneous limits (TG 5.3.4): the chapter-3 USL formulas applied to
+        // the KM estimates, with the same Singh (1993) d2max critical value
+        // computed on the total sample size n (detects and NDs at their DL).
+        double d2max = Btv.D2Max(n, cc);
+        double uslNormal = km.Mean + d2max * km.Sd;                                        // (5.3.4.1)
+        if (kmLog is not null) uslLog = Math.Exp(kmLog.Mean + d2max * kmLog.Sd);           // (5.3.4.2)
+        if (kmCbrt is not null) uslWh = Math.Max(0.0, Math.Pow(kmCbrt.Mean + d2max * kmCbrt.Sd, 3.0));  // (5.3.4.3 WH)
+        if (kmRoot4 is not null) uslHw = Math.Pow(kmRoot4.Mean + d2max * kmRoot4.Sd, 4.0);              // (5.3.4.3 HW)
+        double uslNonparam = observations.Max(o => o.Value);
 
         return new BtvNdResult
         {
@@ -123,6 +143,8 @@ public static class BtvWithNd
             PercentileGammaWh = pctWh, PercentileGammaHw = pctHw,
             ToleranceFactorK = kFactor, UtlNormal = utlNormal, UtlLognormal = utlLog,
             UtlGammaWh = utlWh, UtlGammaHw = utlHw,
+            D2Max = d2max, UslNormal = uslNormal, UslLognormal = uslLog,
+            UslGammaWh = uslWh, UslGammaHw = uslHw, UslNonparametric = uslNonparam,
         };
     }
 

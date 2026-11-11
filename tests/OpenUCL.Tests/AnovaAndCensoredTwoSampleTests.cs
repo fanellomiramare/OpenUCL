@@ -137,3 +137,43 @@ public class CensoredTwoSampleTestsCore
         Assert.Equal(1.537680, g.Statistic, 5);
     }
 }
+
+public class BtvWithNdGoldenTests
+{
+    private static ValueObservation D(double v) => ValueObservation.Detect(v);
+    private static ValueObservation Nd(double dl) => ValueObservation.Nondetect(dl);
+
+    /// <summary>
+    /// Golden: TG 5.2 Example 5-1 / Tables 5-1..5-3 — the Oahu data set
+    /// (n=24, 13 NDs), USLs computed on KM estimates per TG 5.3.4:
+    /// normal 2.834 (Table 5-1), gamma WH 3.051 / HW 3.107, lognormal 3.354
+    /// (Table 5-3); d2max(24) = 2.644. Cross-checks from the same tables:
+    /// UTL normal-KM 2.595, Chebyshev-KM UPL 4.121, percentile normal-KM
+    /// 2.122, UTL gamma WH-KM 2.661. Data embedded; runs on CI.
+    /// </summary>
+    [Fact]
+    public void Usl_km_oahu_matches_TG_tables_5_1_to_5_3()
+    {
+        var oahu = new List<ValueObservation>
+        {
+            D(0.5), D(0.5), D(0.5), D(0.6), D(0.7), D(0.7), D(0.9), Nd(0.9), Nd(1), Nd(1),
+            Nd(1), Nd(1), D(1.5), D(1.7), Nd(2), Nd(2), Nd(2), Nd(2), Nd(2), Nd(2),
+            Nd(2), Nd(2), D(2.8), D(3.2)
+        };
+
+        var b = BtvWithNd.Compute(oahu, 0.95, 0.95, 1);
+
+        Assert.Equal(2.643910, b.D2Max, 4);
+        Assert.Equal(2.834110, b.UslNormal, 4);          // TG Table 5-1: 2.834
+        Assert.Equal(3.353680, b.UslLognormal, 4);       // TG Table 5-3: 3.354
+        Assert.Equal(3.050650, b.UslGammaWh, 4);         // TG Table 5-3: 3.051
+        Assert.Equal(3.106790, b.UslGammaHw, 4);         // TG Table 5-3: 3.107
+        Assert.Equal(3.2, b.UslNonparametric, 6);
+
+        // cross-checks from the same TG tables
+        Assert.Equal(2.595520, b.UtlNormal, 4);          // Table 5-1: 2.595
+        Assert.Equal(4.121010, b.UplChebyshev, 4);       // Table 5-1: 4.121
+        Assert.Equal(2.121770, b.PercentileNormal, 4);   // Table 5-1: 2.122
+        Assert.Equal(2.661700, b.UtlGammaWh, 4);         // Table 5-2: 2.661
+    }
+}
