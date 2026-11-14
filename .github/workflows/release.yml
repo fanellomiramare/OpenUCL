@@ -32,14 +32,17 @@ jobs:
       - name: Publish (self-contained, single-file)
         shell: bash
         run: |
+          VER="${GITHUB_REF_NAME#v}"   # version = tag, e.g. v0.16.0 -> 0.16.0
           for rid in ${{ matrix.rids }}; do
             dotnet publish src/OpenUCL.Cli -c Release -r "$rid" \
               -p:PublishSingleFile=true -p:SelfContained=true \
               -p:IncludeNativeLibrariesForSelfExtract=true -p:DebugType=embedded \
+              -p:Version="$VER" \
               -o "out/cli-$rid"
             dotnet publish src/OpenUCL.Gui -c Release -r "$rid" \
               -p:PublishSingleFile=true -p:SelfContained=true \
               -p:IncludeNativeLibrariesForSelfExtract=true -p:DebugType=embedded \
+              -p:Version="$VER" \
               -o "out/gui-$rid"
           done
 

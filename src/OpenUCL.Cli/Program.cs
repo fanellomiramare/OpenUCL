@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Reflection;
 using OpenUCL.Core;
 using OpenUCL.Data;
 
@@ -6,7 +7,13 @@ namespace OpenUCL.Cli;
 
 internal static class Program
 {
-    private const string Version = "0.15.0";
+    // Version comes from the build: the release workflow passes -p:Version=<tag
+    // without 'v'>, local builds fall back to 0.0.0-dev (Directory.Build.props).
+    // The SDK appends the commit hash (+sha) to the informational version; the
+    // sheets report the bare version only.
+    private static readonly string Version = (
+        Assembly.GetEntryAssembly()?.GetCustomAttribute<AssemblyInformationalVersionAttribute>()
+            ?.InformationalVersion ?? "0.0.0-dev").Split('+')[0];
 
     public static int Main(string[] args)
     {
@@ -432,7 +439,7 @@ internal static class Program
                     rest.Add(args[i]); break;
             }
         }
-        if (cc is < 0.5 or >= 1.0) throw new FormatException("--alpha must be in (0.005, 0.495)");
+        if (cc is < 0.505 or > 0.995) throw new FormatException("--alpha must be in (0.005, 0.495)");
         var spec = InputSpec.Parse(rest.ToArray());
         string fileHash = ShortHash(spec.File);
 
@@ -619,8 +626,9 @@ internal static class Program
                 // H is computed exactly by polar integration of the conditional-t
                 // density. ProUCL instead interpolates Land's (1975) tables (only
                 // the 90%/95% levels), which agree with the exact values within
-                // table precision for n up to ~31 but inflate H by 5-7% for larger
-                // n (silver data set, n=55-56).
+                // table precision for n up to ~31 but inflate H by 3.5-5.5% for larger
+                // n (silver data set, n=55-56; measured 18.54/17.599 = +5.3% and
+                // 11.11/10.719 = +3.6%, decision #45).
                 double hLand = LandExact.LandCriticalH(detected.Length, sdLog, cc);
                 double landUcl = LandExact.LandUcl(meanLog, sdLog, detected.Length, cc);
                 var land = sheet.AddSection("land h-ucl (lognormal, historical)");
@@ -704,6 +712,9 @@ internal static class Program
                     rest.Add(args[i]); break;
             }
         }
+        if (cc is < 0.5 or >= 1.0) throw new FormatException("--alpha must be in (0, 0.5]");
+        if (coverage is <= 0.0 or >= 1.0) throw new FormatException("--coverage must be in (0, 1)");
+        if (k < 1) throw new FormatException("--k must be at least 1");
         var spec = InputSpec.Parse(rest.ToArray());
         string fileHash = ShortHash(spec.File);
 
@@ -746,7 +757,7 @@ internal static class Program
 
             var utl = sheet.AddSection("upper tolerance limits");
             utl.ColumnsAre("limit", "value", "reference");
-            utl.AddRow("tolerance factor K", F(b.ToleranceFactorK), "exact noncentral-t (Hahn-Meeker tables)");
+            utl.AddRow("tolerance factor K", F(b.ToleranceFactorK), "exact noncentral-t (computed, not tabled)");
             utl.AddRow($"UTL{cc * 100:G4}-{coverage * 100:G4} normal", F(b.UtlNormal), "TG eq. 3-6");
             if (b.LognormalApplicable) utl.AddRow($"UTL{cc * 100:G4}-{coverage * 100:G4} lognormal", F(b.UtlLognormal), "TG eq. 3-7");
             if (b.GammaApplicable)
@@ -806,7 +817,7 @@ internal static class Program
                     }
                     ndSec.AddRow("USL nonparametric (max)", F(bn.UslNonparametric), "TG 5.3.4.4; use only on outlier-free single populations");
                     ndSec.AddNote("KM on transformed scale: detects and NDs (at their DL) are all transformed before the KM (TG 5.3.x). " +
-                                  "gamma KM percentiles via the exact chi-square route are planned; WH/HW only for now.");
+                                  "gamma-KM percentile: chi-square route (TG 5.3.2.3) - ProUCL-consistent within 0.5% (k-hat estimation detail).");
                 }
                 catch (ArgumentException ex)
                 {
@@ -906,7 +917,6 @@ internal static class Program
     {
         double cs = double.NaN, alpha = 0.05;
         bool lowerTail = false;
-        string test = "t";
         var rest = new List<string>();
         for (int i = 0; i < args.Length; i++)
         {
@@ -916,8 +926,6 @@ internal static class Program
                     cs = double.Parse(args[++i], CultureInfo.InvariantCulture); break;
                 case "--alpha" when i + 1 < args.Length:
                     alpha = double.Parse(args[++i], CultureInfo.InvariantCulture); break;
-                case "--test" when i + 1 < args.Length:
-                    test = args[++i]; break;
                 case "--lower":
                     lowerTail = true; break;
                 default:
@@ -967,40 +975,44 @@ internal static class Program
     private static int RunTest2(string[] args)
     {
         double alpha = 0.05;
-        string? groupCol = null, groupA = null, groupB = null, valueCol = null;
+        string? groupA = null, groupB = null;
         bool lowerTail = false;
         var rest = new List<string>();
+        var inputOptionArgs = new List<string>();
         for (int i = 0; i < args.Length; i++)
         {
             switch (args[i])
             {
                 case "--alpha" when i + 1 < args.Length:
-                    alpha = double.Parse(args[++i], CultureInfo.InvariantCulture); break;
-                case "--group-col" when i + 1 < args.Length:
-                    groupCol = args[++i]; break;
+                    alpha = double.Parse(args[++i], System.Globalization.CultureInfo.InvariantCulture); break;
                 case "--group-a" when i + 1 < args.Length:
                     groupA = args[++i]; break;
                 case "--group-b" when i + 1 < args.Length:
                     groupB = args[++i]; break;
-                case "--value-col" when i + 1 < args.Length:
-                    valueCol = args[++i]; break;
                 case "--lower":
                     lowerTail = true; break;
+                // input options: keep option+value pair for InputSpec.Parse (consume the value)
+                case "--col-sep" or "--value-sep" or "--value-col" or "--group-col"
+                     or "--nd-flag-col" or "--nd-flag-value" or "--dl-col" when i + 1 < args.Length:
+                    inputOptionArgs.Add(args[i]); inputOptionArgs.Add(args[++i]); break;
                 default:
                     rest.Add(args[i]); break;
             }
         }
         if (rest.Count == 0) throw new FormatException("no input file given");
-        if (rest.Count > 1 && groupCol is not null)
-            throw new FormatException("provide either one file with --group-col, or two files without it");
+        var files = rest.Where(a => !a.StartsWith("--")).ToList();
+        if (files.Count == 0) throw new FormatException("no input file given");
+        if (files.Count > 1 && (groupA is not null || groupB is not null))
+            throw new FormatException("provide either one file with --group-col/--group-a/--group-b, or two files without them");
+        var optionArgs = rest.Where(a => a.StartsWith("--")).Concat(inputOptionArgs).ToArray();
 
         List<ValueObservation> obsA, obsB;
         string description;
-        if (rest.Count == 1)
+        if (files.Count == 1)
         {
-            if (groupCol is null || groupA is null || groupB is null)
-                throw new FormatException("single-file mode requires --group-col, --group-a and --group-b");
-            var spec = InputSpec.Parse(rest.ToArray());
+            var spec = InputSpec.Parse(optionArgs.Append(files[0]).ToArray());
+            if (spec.GroupColumn is null || groupA is null || groupB is null)
+                throw new FormatException("single-file grouped mode requires --group-col, --group-a and --group-b");
             var tableOptions = new LongTableReadOptions
             {
                 ColumnSeparator = spec.ColumnSep ?? ';',
@@ -1016,30 +1028,30 @@ internal static class Program
             var valueColumns = spec.ValueColumns.Count > 0 ? spec.ValueColumns
                 : table.Columns.Where(c => !excluded.Contains(c) && IsNumericColumn(table, c)).ToList();
             if (valueColumns.Count == 0)
-                throw new FormatException("no numeric value column found; use --value-col");
-            if (valueColumns.Count > 1 && valueCol is null)
-                throw new FormatException($"multiple value columns ({string.Join(", ", valueColumns)}): use --value-col");
+                throw new FormatException("no numeric value column found; use --value-col to select one");
+            if (valueColumns.Count > 1)
+                throw new FormatException($"multiple value columns ({string.Join(", ", valueColumns)}): use --value-col to select one");
 
             var series = LongTableReader.ToSeries(table,
                 new SeriesSelection
                 {
-                    ValueColumns = valueCol is not null ? new[] { valueCol } : valueColumns,
-                    GroupColumn = groupCol,
+                    ValueColumns = valueColumns,
+                    GroupColumn = spec.GroupColumn,
                 }, tableOptions).ToList();
 
             obsA = series.Where(s => string.Equals(s.PointId, groupA, StringComparison.OrdinalIgnoreCase))
                 .SelectMany(s => s.Observations).ToList();
             obsB = series.Where(s => string.Equals(s.PointId, groupB, StringComparison.OrdinalIgnoreCase))
                 .SelectMany(s => s.Observations).ToList();
-            description = $"{spec.File}: {groupCol} '{groupA}' (n={obsA.Count}) vs '{groupB}' (n={obsB.Count}), column '{valueCol ?? valueColumns[0]}'";
+            description = $"{spec.File}: {spec.GroupColumn} '{groupA}' (n={obsA.Count}) vs '{groupB}' (n={obsB.Count}), column '{valueColumns[0]}'";
         }
         else
         {
-            var fileA = InputSpec.Parse(new[] { rest[0] });
-            var fileB = InputSpec.Parse(new[] { rest[1] });
+            var fileA = InputSpec.Parse(optionArgs.Append(files[0]).ToArray());
+            var fileB = InputSpec.Parse(optionArgs.Append(files[1]).ToArray());
             obsA = fileA.ReadSeries().SelectMany(s => s.Observations).ToList();
             obsB = fileB.ReadSeries().SelectMany(s => s.Observations).ToList();
-            description = $"{rest[0]} (n={obsA.Count}) vs {rest[1]} (n={obsB.Count})";
+            description = $"{files[0]} (n={obsA.Count}) vs {files[1]} (n={obsB.Count})";
         }
 
         double[] sampleA = obsA.Where(o => !o.IsNondetect).Select(o => o.Value).ToArray();
@@ -1216,7 +1228,8 @@ internal static class Program
         return 0;
     }
 
-    private static string F(double? v) => v?.ToString("G6", CultureInfo.InvariantCulture) ?? "-";
+    private static string F(double? v) => v is double d && !double.IsNaN(d)
+        ? d.ToString("G6", CultureInfo.InvariantCulture) : "-";
 
     private static string Truncate(string s, int max) => s.Length <= max ? s : s[..(max - 1)] + "~";
 
@@ -1234,13 +1247,15 @@ internal static class Program
                                     Lilliefors; --gamma for the gamma EDF tests)
               ndstats <file>        estimates with nondetects: DL/2, Kaplan-Meier, LROS, GROS
               ucl <file>            UCL/EPC suite per series with recommendation sheet
-              btv <file>            background threshold values (percentiles, UPL, UTL, USL)
+              btv <file>            background threshold values (percentiles, UPL, UTL, USL;
+                                    adds ND-BTV via KM when nondetects are present)
               outlier <file>        Dixon (n<=25) and Rosner (n>=25) outlier tests
               test1 <file>          one-sample tests vs Cs (t, sign, Wilcoxon), --cs required
-              test2 <file>          two-sample tests (t, Satterthwaite, WMW, F) with --group-col
+              test2 <file>          two-sample tests (t, Satterthwaite, WMW, F): two files or
+                                    one file with --group-col/--group-a/--group-b; adds
+                                    Gehan and Tarone-Ware when nondetects are present
               trend <file>          Mann-Kendall, Theil-Sen and OLS trend per series
               anova <file>          one-way ANOVA + Kruskal-Wallis across groups
-              btv <file>            also adds ND-BTV via KM when nondetects are present
 
             input formats:
               packed (default)      one series per row: point, parameter, "v1;v2;..."

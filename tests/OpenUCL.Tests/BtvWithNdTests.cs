@@ -1,33 +1,21 @@
 using OpenUCL.Core;
-using OpenUCL.Data;
 using Xunit;
 
 namespace OpenUCL.Tests;
 
 /// <summary>
 /// BTV-ND via KM (TG 5.3): consistency checks against the validated KM estimates,
-/// on the real Oahu data set when available.
+/// on the real Oahu data set (embedded; runs on CI).
 /// </summary>
 public class BtvWithNdTests
 {
-    private static IReadOnlyList<ValueObservation>? OahuObservations()
-    {
-        string path = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86),
-            "ProUCL", "Data", "Oahu.xls");
-        if (!File.Exists(path)) return null;
-        var table = LongTableReader.ReadTable(path);
-        var options = new LongTableReadOptions { NdFlagColumn = "D_Arsenic", NdFlagValue = "0" };
-        var series = LongTableReader.ToSeries(table,
-            new SeriesSelection { ValueColumns = new[] { "Arsenic" } }, options).ToList();
-        return series[0].Observations;
-    }
+    private static IReadOnlyList<ValueObservation> OahuObservations() =>
+        KaplanMeierTests.Oahu();
 
     [Fact]
     public void Upl_normal_km_consistent_with_km_estimates()
     {
         var obs = OahuObservations();
-        if (obs is null) return; // CI: skip
 
         var km = Censored.KaplanMeier(obs);
         var b = BtvWithNd.Compute(obs, 0.95, 0.95, futureK: 5);
@@ -51,7 +39,6 @@ public class BtvWithNdTests
     public void Transformed_km_variants_are_finite_and_ordered()
     {
         var obs = OahuObservations();
-        if (obs is null) return;
 
         var b = BtvWithNd.Compute(obs, 0.95, 0.95, futureK: 5);
         Assert.True(b.LognormalApplicable);

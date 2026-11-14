@@ -1,5 +1,4 @@
 using OpenUCL.Core;
-using OpenUCL.Data;
 using Xunit;
 
 namespace OpenUCL.Tests;
@@ -48,38 +47,33 @@ public class KaplanMeierTests
     /// Golden anchor from the ProUCL Technical Guide, Example 4-1 (Oahu data set):
     /// "A direct KM estimate of the sd obtained using equation (4-3) is 0.713;
     /// and an indirect KM estimate of sd = sqrt(24)*SE = 4.899*0.165 = 0.807".
-    /// The sample file shipped with ProUCL carries the flag column D_Arsenic where
-    /// 1 = detected and 0 = nondetect (13 NDs at DLs 0.9/1/2, 11 detects), matching
-    /// the TG example. Test runs only when the file exists on the machine.
+    /// Data embedded (from the Oahu.xls sample shipped with ProUCL, which carries
+    /// the flag column D_Arsenic where 1 = detected and 0 = nondetect; 13 NDs at
+    /// DLs 0.9/1/2, 11 detects) — identical to the TG example; runs on CI.
     /// </summary>
     [Fact]
     public void Oahu_km_matches_TG_example_4_1()
     {
-        string path = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86),
-            "ProUCL", "Data", "Oahu.xls");
-        if (!File.Exists(path))
-        {
-            // Dataset not available (CI): skip silently.
-            return;
-        }
+        var obs = Oahu();
 
-        var table = LongTableReader.ReadTable(path);
-        Assert.True(table.RowCount == 24);
-        var options = new LongTableReadOptions { NdFlagColumn = "D_Arsenic", NdFlagValue = "0" };
-        var series = LongTableReader.ToSeries(table,
-            new SeriesSelection { ValueColumns = new[] { "Arsenic" } }, options).ToList();
-
-        Assert.Equal(13, series[0].NondetectCount);
-        Assert.Equal(11, series[0].DetectedValues().Length);
-        var km = Censored.KaplanMeier(series[0].Observations);
+        Assert.Equal(13, obs.Count(o => o.IsNondetect));
+        Assert.Equal(11, obs.Count(o => !o.IsNondetect));
+        var km = Censored.KaplanMeier(obs);
         Assert.Equal(0.713, km.Sd, 2);
-        // The TG quotes Helsel's own SE (0.165, a different estimator) for comparison;
-        // our SE implements TG eq. 4-2 directly (formula confirmed against the ProUCL
-        // 5.1 Technical Guide, same chapter). Sanity: positive and smaller than sd.
-        Assert.True(km.StandardErrorOfMean > 0 && km.StandardErrorOfMean < km.Sd,
-            $"SE={km.StandardErrorOfMean}");
+        // TG Table 4-4 prints SE 0.165; ours implements TG eq. 4-2 (Greenwood-type
+        // forward partial areas) and gives 0.164684 — the v0.15.0 off-by-one fix
+        // (pairing the area through distinct i with the weight at distinct i).
+        Assert.Equal(0.164684, km.StandardErrorOfMean, 4);
     }
+
+    /// <summary>The Oahu arsenic data set (11 detects, 13 NDs; ProUCL Oahu.xls /
+    /// TG Example 4-1), shared by the embedded goldens in this project.</summary>
+    internal static List<ValueObservation> Oahu() => new()
+    {
+        D(0.5), D(0.5), D(0.5), D(0.6), D(0.7), D(0.7), D(0.9), Nd(0.9), Nd(1), Nd(1),
+        Nd(1), Nd(1), D(1.5), D(1.7), Nd(2), Nd(2), Nd(2), Nd(2), Nd(2), Nd(2),
+        Nd(2), Nd(2), D(2.8), D(3.2)
+    };
 }
 
 public class RosTests

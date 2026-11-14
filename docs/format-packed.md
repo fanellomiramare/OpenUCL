@@ -26,7 +26,9 @@ size is effectively bounded only by disk space (and each single series must fit 
 - **Nondetects** are written with a leading `<` followed by the detection/reporting limit:
   `<0.68`. This is equivalent to ProUCL's separate "ND flag" + "detection limit" columns.
 - **Missing values**: empty slots (`;;`), `NA`, or `NaN` are skipped and reported in the
-  output ("n" vs "total").
+  output: the per-series rows expose the columns `N` (observations kept) and `ND`
+  (nondetects), and the footer reads "nondetects included in N; stats on detected
+  values only".
 - Decimal separator: `.` by default; `,` accepted when the value separator is not `,`.
 
 ## Example (semicolon-separated CSV, packed)
@@ -51,10 +53,17 @@ MW-01;TCE;1.2|0.8|<0.5|2.1|3.3
 
 ## Batch semantics
 
-Any OpenUCL command applied to a packed file processes **every series** and produces:
+Any OpenUCL command applied to a packed file processes **every series** and prints the
+per-series results to stdout (`summary` prints one row per series; `ucl`/`btv`/`test1`
+print the full ProUCL-style output sheet for each series). CSV/XLSX export to files and
+the per-series report bundling are planned for the batch-writer phase (Phase 4 of the
+roadmap).
 
-- a **summary table** (one row per series × statistic/method), exportable to CSV/XLSX;
-- optionally, per-series detailed reports (ProUCL-style output sheets).
+A small packed example is available in the repository:
+[`examples/demo-packed.csv`](../examples/demo-packed.csv). The repository also carries
+[`examples/x-example-packed.csv`](../examples/x-example-packed.csv) — the series X of the
+Technical Guide Example 2-2, kept as a ready-made input for reproducing the manual
+anchoring checks (Land's H and the exact tolerance factor).
 
 The same commands accept a group-by clause on long-format files to obtain the identical
-batch behaviour (`--group point --variable parameter`).
+batch behaviour (`--group-col <group column> --value-col <value column>`).

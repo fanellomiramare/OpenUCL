@@ -152,8 +152,14 @@ public static class Ucl
             if (n <= 50)
             {
                 betaAdj = AdjustedSignificance(alpha, n);                    // table 2-2
-                chiAdj = GammaDistribution.Quantile(betaAdj, nuStar / 2.0, 2.0);
-                gammaAdj = 2.0 * n * kStar * mean / chiAdj;                  // eq. 2-35
+                // TG table 2-2 prints beta = 0.0000 where the adjustment is not
+                // defined (e.g. alpha = 0.01, n = 5): leave the adjusted gamma UCL
+                // not computable (NaN) instead of evaluating chi-square at p = 0.
+                if (betaAdj > 0)
+                {
+                    chiAdj = GammaDistribution.Quantile(betaAdj, nuStar / 2.0, 2.0);
+                    gammaAdj = 2.0 * n * kStar * mean / chiAdj;              // eq. 2-35
+                }
             }
         }
 

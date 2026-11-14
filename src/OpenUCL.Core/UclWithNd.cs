@@ -33,21 +33,20 @@ public sealed record UclWithNdResult
 
 public static class UclWithNd
 {
-    /// <summary>Bootstrap-t UCL on the KM mean/SE (TG 4.7), mirroring the
-    /// full-data convention (Ucl.Bootstrap, eq. 2-62): pivotal
-    /// t*_b = (mean_b - xbar) / SE_b, the alpha-quantile of t* applied as
-    /// UCL = xbar - t*_alpha * SE.</summary>
+    /// <summary>Bootstrap-t UCL on the KM mean/SE (TG 4.7.1.2, eq. 4-12 via the
+    /// chapter-2 eq. 2-62 convention): pivotal t*_b = (mean_b - xbar) / SE_b
+    /// computed on the resamples, the alpha-quantile of t* applied as
+    /// UCL = xbar - t*_alpha * SE. The resample arrays must be in RESAMPLE
+    /// order: pairing sorted means with unsorted SEs scrambles the pivotal
+    /// (fixed 2026-11-14; Oahu moved 1.214 -> 1.345 vs TG Table 4-4: 1.368).</summary>
     private static double KmBootstrapTCompute(double[] means, double[] ses,
-        double pointMean, double pointSe, int runs)
+        double pointMean, double pointSe, double alpha, int runs)
     {
         var tStats = new double[runs];
         for (int b = 0; b < runs; b++)
             tStats[b] = ses[b] > 0 ? (means[b] - pointMean) / ses[b] : 0.0;
         Array.Sort(tStats);
-        double alpha = 0.05;
-        int pos = (int)Math.Ceiling(alpha * runs) - 1;
-        pos = Math.Clamp(pos, 0, runs - 1);
-        double tLower = tStats[pos];
+        double tLower = Ordered(tStats, alpha);
         return pointMean - tLower * pointSe;
     }
 
@@ -85,6 +84,10 @@ public static class UclWithNd
             kmMeans[b] = kmR.Mean;
             kmSes[b] = kmR.StandardErrorOfMean;
         }
+        // bootstrap-t BEFORE the sort: the pivotal pairs means[i] with ses[i]
+        // from the same resample (sorting first scrambles the pairing).
+        double kmBootstrapT = KmBootstrapTCompute(kmMeans, kmSes, km.Mean,
+            km.StandardErrorOfMean, alpha, bootstrapRuns);
         Array.Sort(kmMeans);
 
         // BCA pieces for the KM mean: bias z0 and jackknife acceleration.
@@ -122,7 +125,7 @@ public static class UclWithNd
             KmT = km.Mean + t * km.StandardErrorOfMean,
             KmZ = km.Mean + z * km.StandardErrorOfMean,
             KmChebyshev = km.Mean + chebFactor * km.StandardErrorOfMean,
-            KmBootstrapT = KmBootstrapTCompute(kmMeans, kmSes, km.Mean, km.StandardErrorOfMean, bootstrapRuns),
+            KmBootstrapT = kmBootstrapT,
             KmPercentileBootstrap = Ordered(kmMeans, 1.0 - alpha),
             KmBcaBootstrap = Ordered(kmMeans, Math.Clamp(alpha2, 1.0 / bootstrapRuns, 1.0 - 1.0 / bootstrapRuns)),
         };

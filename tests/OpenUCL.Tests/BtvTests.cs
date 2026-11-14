@@ -1,5 +1,4 @@
 using OpenUCL.Core;
-using OpenUCL.Data;
 using Xunit;
 
 namespace OpenUCL.Tests;
@@ -82,6 +81,7 @@ public class BtvUnitTests
     /// <summary>
     /// Golden: TG Table 4-4 (Oahu, n=24, 13 NDs, Example 4-5) — the KM-based
     /// UCL95 values: KM (t) 1.231, KM (z) 1.22, Chebyshev 95% 1.667, SE 0.165,
+    /// bootstrap-t 1.368 (pivotal t* on KM mean/SE, TG 4.7; seed-dependent),
     /// plus the gamma-KM percentile via the chi-square route (TG Table 5-2:
     /// 95% percentile 2.328; ours 2.3401, -0.5% from ProUCL's internal k-hat).
     /// The SE fix (2026-11-14): the previous implementation paired the area
@@ -109,6 +109,7 @@ public class BtvUnitTests
         Assert.InRange(un.KmT, 1.228, 1.235);                // TG Table 4-4: 1.231
         Assert.InRange(un.KmZ, 1.215, 1.225);                // TG Table 4-4: 1.22
         Assert.InRange(un.KmChebyshev, 1.663, 1.670);        // TG Table 4-4: 1.667
+        Assert.InRange(un.KmBootstrapT, 1.31, 1.40);         // TG Table 4-4: bootstrap-t 1.368 (seed-dependent; ours 1.345 @ seed 381)
 
         var bn = BtvWithNd.Compute(oahu, 0.95, 0.95, 1);
         Assert.InRange(bn.PercentileGammaChi, 2.33, 2.35);   // TG Table 5-2: 2.328
@@ -157,25 +158,21 @@ public class BtvUnitTests
 /// <summary>
 /// Golden tests against ProUCL Technical Guide 5.2 Tables 3-1..3-5, computed on the
 /// SuperFund.xls sample data set shipped with ProUCL (the Example 2-4/3-x data set).
-/// Tests run only when the file is present on the machine (CI skips them).
+/// The columns are embedded below (read from the shipped workbook) so the goldens
+/// run on every machine, CI included.
 /// </summary>
 public class BtvGoldenTests
 {
-    private static double[]? Column(string name)
-    {
-        string path = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86),
-            "ProUCL", "Data", "SuperFund.xls");
-        if (!File.Exists(path)) return null;
-        var table = LongTableReaderHelper.Read(path);
-        return table.GetColumnValues(name);
-    }
+    // SuperFund.xls columns (n = 24 each), read from the workbook shipped with ProUCL.
+    private static readonly double[] Aluminum = { 6280, 3830, 3900, 5130, 9310, 15300, 9730, 7840, 10400, 16200, 6350, 10700, 15400, 12500, 2850, 9040, 2700, 1710, 3430, 6790, 11600, 4110, 7230, 4610 };
+    private static readonly double[] Chromium = { 8.7, 8.1, 11, 5.1, 12, 20, 12, 11, 13, 20, 9.8, 14, 17, 15, 8.4, 14, 4.5, 3, 4, 11, 16.4, 7.6, 35.5, 6.1 };
+    private static readonly double[] Arsenic = { 1.3, 1.2, 2, 1.2, 3.2, 5.9, 2.3, 1.9, 2.9, 3.7, 1.8, 2.3, 2.4, 2.2, 1.1, 3.7, 1.1, 1, 1.5, 2.6, 2.4, 1.1, 2.1, 0.66 };
+    private static readonly double[] Lead = { 16, 6.4, 4.9, 8.3, 18, 14, 12, 8.7, 11, 12, 14, 14, 19, 21, 16, 25, 20, 11, 6.3, 13, 98.5, 53.3, 109, 8.3 };
 
     [Fact]
     public void Aluminum_normal_utl_and_upl_match_TG_table_3_1()
     {
-        var data = Column("Aluminum");
-        if (data is null) return;
+        var data = Aluminum;
         Assert.Equal(24, data.Length);
 
         var b = Btv.Compute(data, 0.95, 0.95);
@@ -201,8 +198,7 @@ public class BtvGoldenTests
     [Fact]
     public void Chromium_lognormal_limits_match_TG_table_3_3()
     {
-        var data = Column("Chromium");
-        if (data is null) return;
+        var data = Chromium;
         Assert.Equal(24, data.Length);
 
         var b = Btv.Compute(data, 0.95, 0.95, futureK: 5);
@@ -241,8 +237,7 @@ public class BtvGoldenTests
     [Fact]
     public void Arsenic_gamma_limits_match_TG_table_3_4()
     {
-        var data = Column("Arsenic");
-        if (data is null) return;
+        var data = Arsenic;
         Assert.Equal(24, data.Length);
 
         var b = Btv.Compute(data, 0.95, 0.95);
@@ -266,8 +261,7 @@ public class BtvGoldenTests
     [Fact]
     public void Lead_nonparametric_limits_match_TG_table_3_5()
     {
-        var data = Column("Lead");
-        if (data is null) return;
+        var data = Lead;
         Assert.Equal(24, data.Length);
 
         var sorted = (double[])data.Clone();
@@ -284,27 +278,5 @@ public class BtvGoldenTests
         double mean = data.Average();
         double sd = Math.Sqrt(data.Sum(v => (v - mean) * (v - mean)) / (data.Length - 1));
         Assert.Equal(141.76, b.UplChebyshev, 1);
-    }
-}
-
-/// <summary>Small helper so golden tests can read the ProUCL sample workbook directly.</summary>
-internal static class LongTableReaderHelper
-{
-    public static LongTable Read(string path) =>
-        OpenUCL.Data.LongTableReader.ReadTable(path);
-}
-
-internal static class LongTableExtensions
-{
-    public static double[] GetColumnValues(this LongTable table, string column)
-    {
-        int col = table.ColumnIndex(column);
-        var values = new List<double>();
-        for (int r = 0; r < table.RowCount; r++)
-        {
-            var v = table.GetDouble(r, col);
-            if (v is not null) values.Add(v.Value);
-        }
-        return values.ToArray();
     }
 }

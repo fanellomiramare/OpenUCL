@@ -87,7 +87,8 @@ agree to display precision; outside that range, OpenUCL remains exact.
 ## What OpenUCL computes today
 
 Validated against the worked examples of the public ProUCL 5.2 Technical Guide and
-against live ProUCL 5.2 output (golden tests run on the original sample data sets):
+against live ProUCL 5.2 output (the golden tests embed the original sample data
+sets and run in full on every machine and in CI):
 
 - **Descriptive statistics** — batch over every series of a file (packed or long layout)
 - **Goodness of fit** — Shapiro-Wilk (Royston AS R94), Lilliefors K-S; gamma

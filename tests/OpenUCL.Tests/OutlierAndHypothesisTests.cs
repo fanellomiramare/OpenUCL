@@ -1,5 +1,4 @@
 using OpenUCL.Core;
-using OpenUCL.Data;
 using Xunit;
 
 namespace OpenUCL.Tests;
@@ -44,21 +43,18 @@ public class RosnerTests
     /// Golden: ProUCL TG 5.2 Table 7-4 (pyrene data, n=45 detects, r0=10).
     /// Row 1: mean 190.1, sd 430.1, outlier 2982, R = 6.491; row 2: mean 126.6,
     /// sd 90.7, outlier 459, R = 3.665; 2 outliers at both 5% and 1%.
+    /// The 45 detected values are embedded (the 'Pyrene-Detect' column of the
+    /// pyrene-She-data.xls sample shipped with ProUCL); runs on CI.
     /// </summary>
     [Fact]
     public void Pyrene_rosner_matches_TG_table_7_4()
     {
-        string path = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86),
-            "ProUCL", "Data", "pyrene-She-data.xls");
-        if (!File.Exists(path)) return; // CI: skip
-
-        var table = LongTableReader.ReadTable(path);
-        // the file carries a 'Pyrene-Detect' column with the 45 detected values only.
-        string col = table.Columns.First(c => c.Contains("Detect", StringComparison.OrdinalIgnoreCase));
-        var series = LongTableReader.ToSeries(table,
-            new SeriesSelection { ValueColumns = new[] { col } }).ToList();
-        double[] detected = series[0].DetectedValues();
+        double[] detected =
+        {
+            31, 32, 34, 40, 47, 48, 59, 63, 64, 64, 67, 67, 67, 72, 73, 84, 86, 87, 94,
+            98, 100, 103, 103, 105, 107, 110, 111, 119, 119, 122, 132, 133, 133, 138,
+            163, 187, 190, 222, 238, 273, 289, 306, 333, 459, 2982
+        };
         Assert.Equal(45, detected.Length);
 
         var ros = Outliers.Rosner(detected, 10);
@@ -109,14 +105,6 @@ public class RosnerTests
         Assert.InRange(ros.Steps[0].Critical1, 3.198, 3.212);  // ProUCL table: 3.200
         Assert.Equal(0, ros.OutliersAt(0.05));
         Assert.Equal(0, ros.OutliersAt(0.01));
-    }
-
-    private static bool IsNumeric(LongTable table, string column)
-    {
-        int col = table.ColumnIndex(column);
-        for (int r = 0; r < table.RowCount; r++)
-            if (table.GetDouble(r, col) is not null) return true;
-        return false;
     }
 
     [Fact]

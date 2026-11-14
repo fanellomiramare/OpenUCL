@@ -1,5 +1,4 @@
 using OpenUCL.Core;
-using OpenUCL.Data;
 using Xunit;
 
 namespace OpenUCL.Tests;
@@ -12,9 +11,8 @@ public class UclWithNdTests
     [Fact]
     public void Km_t_ucl_consistent_with_km_estimates()
     {
-        // Oahu data (when available): KM(t) = KM mean + t(0.95, 23) * KM SE.
+        // Oahu data (embedded): KM(t) = KM mean + t(0.95, 23) * KM SE.
         var obs = OahuObservations();
-        if (obs is null) return; // dataset not present (CI): skip
 
         var un = UclWithNd.Compute(obs, 0.95, 2000, 381);
         var km = Censored.KaplanMeier(obs);
@@ -38,7 +36,6 @@ public class UclWithNdTests
     public void Oahu_gros_gamma_ucl_near_TG_value()
     {
         var obs = OahuObservations();
-        if (obs is null) return;
 
         var un = UclWithNd.Compute(obs, 0.95, 2000, 381);
         Assert.False(double.IsNaN(un.GrosGammaAdjusted), "GROS gamma adjusted UCL should be computable on Oahu");
@@ -52,17 +49,6 @@ public class UclWithNdTests
             () => UclWithNd.Compute(new List<ValueObservation> { Nd(1), Nd(2), Nd(3) }));
     }
 
-    private static IReadOnlyList<ValueObservation>? OahuObservations()
-    {
-        string path = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86),
-            "ProUCL", "Data", "Oahu.xls");
-        if (!File.Exists(path)) return null;
-
-        var table = LongTableReader.ReadTable(path);
-        var options = new LongTableReadOptions { NdFlagColumn = "D_Arsenic", NdFlagValue = "0" };
-        var series = LongTableReader.ToSeries(table,
-            new SeriesSelection { ValueColumns = new[] { "Arsenic" } }, options).ToList();
-        return series[0].Observations;
-    }
+    private static IReadOnlyList<ValueObservation> OahuObservations() =>
+        KaplanMeierTests.Oahu();
 }

@@ -44,6 +44,59 @@ public class CliIntegrationTests
     }
 
     [Fact]
+    public void Cli_test2_grouped_with_nondetects_reaches_gehan_rows()
+    {
+        string? exe = FindCli();
+        if (exe is null) return;   // CLI not built — skip (run dotnet build -c Release)
+
+        var file = Path.Combine(Path.GetTempPath(), $"openucl-cli-t2-{Guid.NewGuid():N}.csv");
+        File.WriteAllText(file,
+            "Group;Value;ND\n" +
+            "A;1.5;det\nA;2.2;det\nA;2.9;det\n" +
+            "B;0.8;det\nB;1.2;ND\nB;3.1;det\nB;4.2;det\n");
+
+        try
+        {
+            var (code, output) = Run(exe,
+                $"test2 \"{file}\" --group-col Group --group-a A --group-b B " +
+                "--value-col Value --nd-flag-col ND --nd-flag-value ND");
+            Assert.Equal(0, code);
+            Assert.Contains("TWO-SAMPLE HYPOTHESIS TESTS", output);
+            Assert.Contains("Gehan (with NDs)", output);
+            Assert.Contains("Tarone-Ware (with NDs)", output);
+        }
+        finally
+        {
+            File.Delete(file);
+        }
+    }
+
+    [Fact]
+    public void Cli_test2_two_packed_files_classic_mode()
+    {
+        string? exe = FindCli();
+        if (exe is null) return;
+
+        var fileA = Path.Combine(Path.GetTempPath(), $"openucl-cli-t2a-{Guid.NewGuid():N}.csv");
+        var fileB = Path.Combine(Path.GetTempPath(), $"openucl-cli-t2b-{Guid.NewGuid():N}.csv");
+        File.WriteAllText(fileA, "Point;Parameter;Values\nMW-A;Cu;\"1.5;2.2;2.9\"\n");
+        File.WriteAllText(fileB, "Point;Parameter;Values\nMW-B;Cu;\"0.8;1.2;3.1;4.2\"\n");
+
+        try
+        {
+            var (code, output) = Run(exe, $"test2 \"{fileA}\" \"{fileB}\"");
+            Assert.Equal(0, code);
+            Assert.Contains("TWO-SAMPLE HYPOTHESIS TESTS", output);
+            Assert.Contains("Wilcoxon-Mann-Whitney", output);
+        }
+        finally
+        {
+            File.Delete(fileA);
+            File.Delete(fileB);
+        }
+    }
+
+    [Fact]
     public void Cli_pipeline_produces_expected_sheet_markers()
     {
         string? exe = FindCli();
