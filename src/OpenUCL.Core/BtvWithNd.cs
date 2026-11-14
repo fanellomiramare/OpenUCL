@@ -34,6 +34,9 @@ public sealed record BtvNdResult
     public double PercentileLognormal { get; init; }
     public double PercentileGammaWh { get; init; }
     public double PercentileGammaHw { get; init; }
+    public double PercentileGammaChi { get; init; }    // TG 5.3.2.3 chi-square route (what ProUCL prints)
+    public double KmGammaK { get; init; }              // KM-moment shape estimate (TG 4.6.2)
+    public double KmGammaTheta { get; init; }
 
     // UTLs (TG 5.3.3)
     public double ToleranceFactorK { get; init; }
@@ -99,6 +102,13 @@ public static class BtvWithNd
 
         double uplWh = double.NaN, uplHw = double.NaN, pctWh = double.NaN, pctHw = double.NaN;
         double utlWh = double.NaN, utlHw = double.NaN, uslWh = double.NaN, uslHw = double.NaN;
+        double kmGammaK = double.NaN, kmGammaTheta = double.NaN, pctGammaChi = double.NaN;
+        if (allPositive)
+        {
+            kmGammaK = km.Mean * km.Mean / (km.Sd * km.Sd);        // TG 4.6.2 moments
+            kmGammaTheta = km.Sd * km.Sd / km.Mean;
+            pctGammaChi = GammaDistribution.Quantile(coverage, kmGammaK, kmGammaTheta);   // = chi2(p, 2k)*theta/2
+        }
         KmEstimates? kmCbrt = null, kmRoot4 = null;
         if (allPositive)
         {
@@ -140,7 +150,8 @@ public static class BtvWithNd
             GammaApplicable = allPositive,
             UplGammaWh = uplWh, UplGammaHw = uplHw,
             PercentileNormal = pctNormal, PercentileLognormal = pctLog,
-            PercentileGammaWh = pctWh, PercentileGammaHw = pctHw,
+            PercentileGammaWh = pctWh, PercentileGammaHw = pctHw, PercentileGammaChi = pctGammaChi,
+            KmGammaK = kmGammaK, KmGammaTheta = kmGammaTheta,
             ToleranceFactorK = kFactor, UtlNormal = utlNormal, UtlLognormal = utlLog,
             UtlGammaWh = utlWh, UtlGammaHw = utlHw,
             D2Max = d2max, UslNormal = uslNormal, UslLognormal = uslLog,

@@ -79,6 +79,41 @@ public class BtvUnitTests
         Assert.Equal(560, b.UslNonparametric, 0);
     }
 
+    /// <summary>
+    /// Golden: TG Table 4-4 (Oahu, n=24, 13 NDs, Example 4-5) — the KM-based
+    /// UCL95 values: KM (t) 1.231, KM (z) 1.22, Chebyshev 95% 1.667, SE 0.165,
+    /// plus the gamma-KM percentile via the chi-square route (TG Table 5-2:
+    /// 95% percentile 2.328; ours 2.3401, -0.5% from ProUCL's internal k-hat).
+    /// The SE fix (2026-11-14): the previous implementation paired the area
+    /// through distinct i-1 with the weight of distinct i (off-by-one) and
+    /// gave SE ~ 0.109 -> KM(t) ~ 1.137. Data embedded; runs on CI.
+    /// </summary>
+    [Fact]
+    public void Km_ucls_oahu_match_TG_table_4_4()
+    {
+        static ValueObservation D(double v) => ValueObservation.Detect(v);
+        static ValueObservation Nd(double dl) => ValueObservation.Nondetect(dl);
+        var oahu = new List<ValueObservation>
+        {
+            D(0.5), D(0.5), D(0.5), D(0.6), D(0.7), D(0.7), D(0.9), Nd(0.9), Nd(1), Nd(1),
+            Nd(1), Nd(1), D(1.5), D(1.7), Nd(2), Nd(2), Nd(2), Nd(2), Nd(2), Nd(2),
+            Nd(2), Nd(2), D(2.8), D(3.2)
+        };
+
+        var km = Censored.KaplanMeier(oahu);
+        Assert.Equal(0.948958, km.Mean, 5);
+        Assert.Equal(0.164684, km.StandardErrorOfMean, 4);   // TG Table 4-4: SE 0.165
+        Assert.Equal(0.713016, km.Sd, 4);                    // TG: SD 0.713
+
+        var un = UclWithNd.Compute(oahu, 0.95);
+        Assert.InRange(un.KmT, 1.228, 1.235);                // TG Table 4-4: 1.231
+        Assert.InRange(un.KmZ, 1.215, 1.225);                // TG Table 4-4: 1.22
+        Assert.InRange(un.KmChebyshev, 1.663, 1.670);        // TG Table 4-4: 1.667
+
+        var bn = BtvWithNd.Compute(oahu, 0.95, 0.95, 1);
+        Assert.InRange(bn.PercentileGammaChi, 2.33, 2.35);   // TG Table 5-2: 2.328
+    }
+
     [Fact]
     public void Tolerance_factor_n56_matches_ProUCL_live_sheet()
     {

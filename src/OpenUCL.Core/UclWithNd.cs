@@ -19,6 +19,7 @@ public sealed record UclWithNdResult
     public double KmT { get; init; }              // KM mean + t(alpha, n-1) * KM SE
     public double KmZ { get; init; }              // KM mean + z(alpha) * KM SE
     public double KmChebyshev { get; init; }      // KM mean + sqrt(1/alpha - 1) * KM SE
+    public double KmBootstrapT { get; init; }     // TG 4.7: bootstrap-t on KM mean/SE
     public double KmPercentileBootstrap { get; init; }
     public double KmBcaBootstrap { get; init; }
 
@@ -32,6 +33,24 @@ public sealed record UclWithNdResult
 
 public static class UclWithNd
 {
+    /// <summary>Bootstrap-t UCL on the KM mean/SE (TG 4.7), mirroring the
+    /// full-data convention (Ucl.Bootstrap, eq. 2-62): pivotal
+    /// t*_b = (mean_b - xbar) / SE_b, the alpha-quantile of t* applied as
+    /// UCL = xbar - t*_alpha * SE.</summary>
+    private static double KmBootstrapTCompute(double[] means, double[] ses,
+        double pointMean, double pointSe, int runs)
+    {
+        var tStats = new double[runs];
+        for (int b = 0; b < runs; b++)
+            tStats[b] = ses[b] > 0 ? (means[b] - pointMean) / ses[b] : 0.0;
+        Array.Sort(tStats);
+        double alpha = 0.05;
+        int pos = (int)Math.Ceiling(alpha * runs) - 1;
+        pos = Math.Clamp(pos, 0, runs - 1);
+        double tLower = tStats[pos];
+        return pointMean - tLower * pointSe;
+    }
+
     /// <summary>
     /// Computes the UCL suite for a left-censored data set at confidence coefficient cc.
     /// bootstrapRuns/seed control the resampling methods (deterministic per seed).
@@ -57,11 +76,14 @@ public static class UclWithNd
         var pool = observations.ToArray();
         var rng = new SeededRng(seed);
         var kmMeans = new double[bootstrapRuns];
+        var kmSes = new double[bootstrapRuns];   // bootstrap-t: KM SE of each resample
         for (int b = 0; b < bootstrapRuns; b++)
         {
             var sample = new ValueObservation[n];
             for (int i = 0; i < n; i++) sample[i] = pool[rng.NextIndex(n)];
-            kmMeans[b] = Censored.KaplanMeier(sample).Mean;
+            var kmR = Censored.KaplanMeier(sample);
+            kmMeans[b] = kmR.Mean;
+            kmSes[b] = kmR.StandardErrorOfMean;
         }
         Array.Sort(kmMeans);
 
@@ -100,6 +122,7 @@ public static class UclWithNd
             KmT = km.Mean + t * km.StandardErrorOfMean,
             KmZ = km.Mean + z * km.StandardErrorOfMean,
             KmChebyshev = km.Mean + chebFactor * km.StandardErrorOfMean,
+            KmBootstrapT = KmBootstrapTCompute(kmMeans, kmSes, km.Mean, km.StandardErrorOfMean, bootstrapRuns),
             KmPercentileBootstrap = Ordered(kmMeans, 1.0 - alpha),
             KmBcaBootstrap = Ordered(kmMeans, Math.Clamp(alpha2, 1.0 / bootstrapRuns, 1.0 - 1.0 / bootstrapRuns)),
         };

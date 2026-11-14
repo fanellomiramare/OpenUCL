@@ -69,7 +69,10 @@ public static class Censored
         }
         double variance = meanSq - mean * mean;
 
-        // Eq. 4-2: SE of the mean.
+        // Eq. 4-2: SE of the mean (EPA 2006c / Bechtel-Jacobs 2000 form):
+        // SE^2 = [(n-k)/(n-k-1)] * sum_{i=1}^{np-1} [ ahat_i^2 * m_{i+1} / (n_{i+1}(n_{i+1}-m_{i+1})) ]
+        // with ahat_i = sum_{j<i} (x_{j+1}-x_j) * F(x_j) (forward partial areas).
+        // Verified vs ProUCL 5.2 / TG Table 4-4 (Oahu): SE = 0.1647 -> 0.165.
         double se = double.NaN;
         if (n - k > 1 && np > 1)
         {
@@ -81,7 +84,7 @@ public static class Censored
             for (int i = 1; i < np; i++)
             {
                 double m2 = ms[i], n2 = ns[i];
-                sum += alpha[i - 1] * alpha[i - 1] * m2 * m2 / (n2 * n2 * (n2 - m2));
+                sum += alpha[i] * alpha[i] * m2 / (n2 * (n2 - m2));
             }
             se = Math.Sqrt((n - k) / (double)(n - k - 1) * sum);
         }

@@ -647,6 +647,7 @@ internal static class Program
                     ndSec.AddRow("KM (Chebyshev)", F(un.KmChebyshev), "TG eq. 2-46 on KM estimates; not recommended by ProUCL 5.2");
                     ndSec.AddRow("KM percentile bootstrap", F(un.KmPercentileBootstrap), "bootstrap of observation pairs, seed " + seed);
                     ndSec.AddRow("KM BCA bootstrap", F(un.KmBcaBootstrap), "TG eq. 2-58..2-61 on KM means");
+                    ndSec.AddRow("KM bootstrap-t", F(un.KmBootstrapT), "TG 4.7 bootstrap-t on KM mean/SE");
                     if (un.LrosT > 0)
                     {
                         ndSec.AddRow("LROS (t)", F(un.LrosT), "t-UCL on LROS-imputed data set");
@@ -789,8 +790,9 @@ internal static class Program
                     }
                     if (b.GammaApplicable)
                     {
-                        ndSec.AddRow("percentile gamma WH-KM", F(bn.PercentileGammaWh), "TG 5.3.2.3 (cube-root scale)");
-                        ndSec.AddRow("percentile gamma HW-KM", F(bn.PercentileGammaHw), "TG 5.3.2.3 (fourth-root scale)");
+                        ndSec.AddRow("percentile gamma-KM (chi-square)", F(bn.PercentileGammaChi), "TG 5.3.2.3 chi-square route (what ProUCL prints)");
+                        ndSec.AddRow("percentile gamma WH-KM", F(bn.PercentileGammaWh), "WH approximation (cube-root scale)");
+                        ndSec.AddRow("percentile gamma HW-KM", F(bn.PercentileGammaHw), "HW approximation (fourth-root scale)");
                         ndSec.AddRow("UTL gamma WH-KM", F(bn.UtlGammaWh), "TG 5.3.3.3 (cube-root scale)");
                         ndSec.AddRow("UTL gamma HW-KM", F(bn.UtlGammaHw), "TG 5.3.3.3 (fourth-root scale)");
                     }
