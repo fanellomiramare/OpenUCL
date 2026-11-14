@@ -1078,9 +1078,6 @@ internal static class Program
 
         Console.Write(sheet.RenderText());
         return 0;
-
-        static double[] Pool(IEnumerable<SeriesRecord> series) =>
-            series.SelectMany(s => s.DetectedValues()).ToArray();
     }
 
     private static bool IsNumericColumn(LongTable table, string column)

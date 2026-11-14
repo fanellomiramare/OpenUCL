@@ -185,7 +185,6 @@ public static class Btv
             UslNonparametric = sorted[n - 1],
         };
 
-        static int CountNonPositive(double[] values) { int c = 0; foreach (var v in values) if (v <= 0) c++; return c; }
     }
 
     /// <summary>

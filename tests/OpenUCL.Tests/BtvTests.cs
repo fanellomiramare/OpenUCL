@@ -275,7 +275,7 @@ public class BtvGoldenTests
 
         var b = Btv.Compute(sorted, 0.95, 0.95);
         Assert.Equal(sorted[^1], b.UtlNonparametric, 10);                 // TG: UTL = 109 (max)
-        Assert.Equal(b.UtlNonparametricOrder, 24);                        // TG: order r = 24
+        Assert.Equal(24, b.UtlNonparametricOrder);                        // TG: order r = 24
         Assert.Equal(0.708, b.UtlAchievedCC, 3);                          // TG: achieved CC 0.708
         Assert.Equal(sorted[^1], b.UslNonparametric, 10);                 // TG: USL = 109
         // UPL95: position (n+1)*0.95 = 23.75 -> 98.5 + 0.75*(109-98.5) = 106.375
