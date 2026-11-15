@@ -37,10 +37,10 @@ public sealed record LillieforsResult(int N, double D)
 {
     /// <summary>
     /// Critical value at significance level alpha (test rejects when D &gt; critical).
-    /// Uses the large-sample formula adopted by ProUCL 5.2 (Moling and Abdi 2007):
+    /// Uses the large-sample formula adopted by ProUCL 5.2 (Molin and Abdi 1998):
     /// CV = Factor / ((0.83 + n)/sqrt(n) - 0.01), with Factor = 1.035, 0.895, 0.819, 0.741
     /// for alpha = 0.01, 0.05, 0.10, 0.20.
-    /// NOTE: for n &lt;= 50 ProUCL uses the exact Moling-Abdi table (Salkind 2007), which is
+    /// NOTE: for n &lt;= 50 ProUCL uses the exact Molin-Abdi table (Salkind 2007), which is
     /// not yet integrated here; for such samples this value is an approximation.
     /// </summary>
     public double CriticalValue(double alpha)

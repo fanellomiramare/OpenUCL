@@ -264,7 +264,7 @@ internal static class Program
         }
         Console.WriteLine(new string('-', 92));
         Console.WriteLine($"{series} series. S-W = Shapiro-Wilk (Royston AS R94); Lill = Lilliefors K-S");
-        Console.WriteLine("(D-crit for n<=50 uses the large-sample formula: ProUCL's exact Moling-Abdi table pending).");
+        Console.WriteLine("(D-crit for n<=50 uses the large-sample formula: ProUCL's exact Molin-Abdi table pending).");
         return 0;
     }
 
