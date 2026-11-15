@@ -76,13 +76,16 @@ Older releases and changelogs: [Releases](https://github.com/fanellomiramare/Ope
 
 Where ProUCL relies on tabulated or approximated critical values, OpenUCL
 computes them exactly. Within the range covered by ProUCL's tables the two
-agree to display precision; outside that range, OpenUCL remains exact.
+agree to display precision; outside that range, OpenUCL remains exact. Every
+row below is golden-locked against live ProUCL 5.2 output at Full Precision
+(seven decimals), verification campaigns of November 2026.
 
 | Method | ProUCL 5.2 | OpenUCL |
 |---|---|---|
-| Land's H-UCL | H interpolated from Land's (1975) tables; 90% and 95% levels only | exact H for any sample size and confidence level (conditional-t polar integration) |
-| UTL tolerance factor K | tabulated for n ≤ 30, Natrella approximation beyond (at n = 56 it sits 0.3% below exact) | exact noncentral-t K for any n, confidence level and coverage — no table/approximation switch |
+| Land's H-UCL | H interpolated from Land's (1975) tables; 90% and 95% levels only (+3.6% vs exact at n = 55, +5.3% at n = 56) | exact H for any sample size and confidence level (conditional-t polar integration) |
+| UTL tolerance factor K | tabulated for n ≤ 30 (2.309 vs exact 2.30929 at n = 24), Natrella approximation beyond (−0.28% vs exact at n = 56) | exact noncentral-t K for any n, confidence level and coverage — no table/approximation switch |
 | Dixon outlier test | tabulated critical values (TG Appendix A) | exact critical values by integration of order-statistic ratios (n ≤ 25, any α) |
+| Nonparametric percentile | Excel PERCENTILE.INC convention — while the TG's own worked example contradicts the TG text (it uses p·n) | same Excel convention as ProUCL, with the TG discrepancy documented |
 
 ## What OpenUCL computes today
 
