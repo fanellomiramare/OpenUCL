@@ -141,6 +141,9 @@ version-by-version changelog.
 ## Documentation
 
 - [Packed series format](docs/format-packed.md) — one series per row, nondetects as `<DL`
+- [Technical Guide](docs/technical-guide/README.md) — OpenUCL's own method
+  documentation: equations, CLI usage and validation anchors per method (in
+  progress; chapter order mirrors the TG)
 - [ProUCL Technical Guide 5.2](https://www.epa.gov/land-research/proucl-software) —
   the methodological reference (public domain); each implementation cites the
   equations it reproduces
