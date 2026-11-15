@@ -23,9 +23,12 @@ public class FinneyAndMvueTests
     /// where SE(mu1) is the standard error of the MVUE mean from TG eq. 2-16
     /// (Bradu-Mundlak) — NOT the MVUE of the distribution sd (eq. 2-15).
     /// Golden: ProUCL 5.2 live output sheet on silver-data.xls (all 56
-    /// observations as detected, run 2026-11-11): 90% 15.61, 95% 19.12,
-    /// 97.5% 24.00, 99% 33.59 — identical to TG Table 2-3. An earlier version
-    /// passed the distribution sd instead of the SE, yielding ~126.8 at 95%.
+    /// observations as detected, run 2026-11-11, Full Precision OFF): 90% 15.61,
+    /// 95% 19.12, 97.5% 24.00, 99% 33.59 — identical to TG Table 2-3. Re-confirmed
+    /// 2026-11-15 with Full Precision ON (campaign 2, scheda F) to 7 decimals:
+    /// 15.605606 / 19.121108 / 24.000490 / 33.585089 — exact parity with our
+    /// eq. 2-16 SE implementation. An earlier version passed the distribution
+    /// sd instead of the SE, yielding ~126.8 at 95%.
     /// </summary>
     [Fact]
     public void Chebyshev_mvue_on_silver_matches_ProUCL_live_sheet()
@@ -39,10 +42,10 @@ public class FinneyAndMvueTests
         Assert.Equal(7.84454, mvueMean, 4);
         Assert.Equal(2.58702, se, 4);
 
-        Assert.InRange(LognormalHistorical.ChebyshevMvueUcl(mvueMean, se, 0.90), 15.60, 15.62);
-        Assert.InRange(LognormalHistorical.ChebyshevMvueUcl(mvueMean, se, 0.95), 19.11, 19.13);
-        Assert.InRange(LognormalHistorical.ChebyshevMvueUcl(mvueMean, se, 0.975), 23.99, 24.01);
-        Assert.InRange(LognormalHistorical.ChebyshevMvueUcl(mvueMean, se, 0.99), 33.58, 33.60);
+        Assert.Equal(15.605606, LognormalHistorical.ChebyshevMvueUcl(mvueMean, se, 0.90), 4);
+        Assert.Equal(19.121108, LognormalHistorical.ChebyshevMvueUcl(mvueMean, se, 0.95), 4);
+        Assert.Equal(24.000490, LognormalHistorical.ChebyshevMvueUcl(mvueMean, se, 0.975), 4);
+        Assert.Equal(33.585089, LognormalHistorical.ChebyshevMvueUcl(mvueMean, se, 0.99), 4);
     }
 
     /// <summary>

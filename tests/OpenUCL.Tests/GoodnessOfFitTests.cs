@@ -52,9 +52,15 @@ public class GoodnessOfFitTests
         Assert.Equal(0.6369, skewed.PValue, 3);
     }
 
-    // Regression pin on a fixed sample. True golden parity with ProUCL/R output is
-    // deferred to the validation harness (docs: CONTRIBUTING.md); this test guards
-    // against accidental algorithm changes in the meantime.
+    // Regression pin on a fixed sample. ProUCL-parity status (campaign 2,
+    // scheda F, 2026-11-15, silver n=56 Full Precision ON): our W DIFFERS from
+    // ProUCL's — normal data: ours 0.222829 vs ProUCL 0.2058465; lognormal
+    // (logged) data: ours 0.947114 vs ProUCL 0.9512797 (same conclusions at the
+    // sheet significance levels; ProUCL p-values: 0 at 1% and 0.0464453 at 10%).
+    // Lilliefors D matches ProUCL EXACTLY (0.4222939 and 0.1165799) — so the
+    // divergence is in the Royston W algorithm/variant, not in the data. Open
+    // item: discriminate our AS R94 variant against R's shapiro.test (validation
+    // harness). This test guards against accidental algorithm changes meanwhile.
     [Fact]
     public void ShapiroWilk_regression_pin_n20()
     {

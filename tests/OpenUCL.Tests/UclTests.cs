@@ -19,6 +19,35 @@ public class UclGoldenTests
 
     private static UclResult Act() => Ucl.Compute(X, 0.95);
 
+    /// <summary>
+    /// Golden: ProUCL 5.2 live sheet on silver-data.xls (n = 56, all detected)
+    /// with Full Precision ON — campaign 2, scheda F, 2026-11-15 (FP OFF run
+    /// 2026-11-11, scheda A). Every deterministic method matches ProUCL to the
+    /// full 7 printed decimals. Known deviations, documented not asserted:
+    /// H-UCL exact 17.5987 vs ProUCL table-interpolated 18.535003 (+5.32%,
+    /// decision #45); ProUCL suggests Student's-t while our logic declines
+    /// recommendation on this data set (skewness 7.17, no fit at 10%).
+    /// Bootstrap rows are generator-dependent on both sides (no exact parity).
+    /// </summary>
+    [Fact]
+    public void Silver_deterministic_ucls_match_ProUCL_full_precision_sheet()
+    {
+        var u = Ucl.Compute(BtvUnitTests.Silver, 0.95);
+
+        Assert.Equal(15.448214, u.Mean, 5);              // ProUCL: 15.448214
+        Assert.Equal(75.194354, u.StandardDeviation, 5); // ProUCL: 75.194354
+        Assert.Equal(7.1743315, u.Skewness, 5);          // ProUCL: 7.1743315
+        Assert.Equal(32.259308, u.StudentT, 4);          // ProUCL: 32.259308
+        Assert.Equal(33.864871, u.ModifiedT, 4);         // ProUCL: 33.864871
+        Assert.Equal(31.976145, u.Clt, 4);               // ProUCL: 31.976145
+        Assert.Equal(42.269550, u.AdjustedClt, 5);       // ProUCL: 42.269550 (ours 42.26954971... — parity to the printed 7th decimal)
+        Assert.Equal(59.247600, u.ChebyshevMeanSd, 4);   // ProUCL: 59.247600
+        Assert.Equal(24.036849, u.GammaApproximate, 3);  // ProUCL: 24.036849
+        Assert.Equal(0.3193223, u.KHat, 5);              // ProUCL: 0.3193223
+        Assert.Equal(0.3141205, u.KStar, 5);             // ProUCL: 0.3141205
+        Assert.Equal(22.610754, u.ChiSquareApprox, 3);   // ProUCL: 22.610754
+    }
+
     [Fact]
     public void Summary_statistics_match_TG_table()
     {

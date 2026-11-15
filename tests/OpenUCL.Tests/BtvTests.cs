@@ -27,6 +27,13 @@ public class NoncentralTTests
 
 public class BtvUnitTests
 {
+    /// <summary>silver-data.xls (n=56, all detected), the ProUCL sample data set
+    /// used by several live-sheet goldens (USL, UTL/K, UCL full precision).</summary>
+    internal static readonly double[] Silver =
+    {
+        0.1,0.1,0.1,0.1,0.2,0.2,0.2,0.2,0.2,0.3,0.5,0.5,0.7,0.8,1,1,1,1,1,1,1,1,1,1,1,1,1,1.2,1.4,1.5,2,2,2,2,2,2.5,2.7,3.2,4.4,5,5,5,5,6,10,10,10,10,10,10,20,20,20,25,90,560
+    };
+
     [Fact]
     public void ProUcl_percentile_interpolation()
     {
@@ -67,7 +74,7 @@ public class BtvUnitTests
     [Fact]
     public void Usl_silver_n56_matches_ProUCL_live_sheet()
     {
-        double[] silver = { 0.1,0.1,0.1,0.1,0.2,0.2,0.2,0.2,0.2,0.3,0.5,0.5,0.7,0.8,1,1,1,1,1,1,1,1,1,1,1,1,1,1.2,1.4,1.5,2,2,2,2,2,2.5,2.7,3.2,4.4,5,5,5,5,6,10,10,10,10,10,10,20,20,20,25,90,560 };
+        double[] silver = Silver;
         var b = Btv.Compute(silver, 0.95, 0.95, 1);
 
         Assert.Equal(3.0007349, b.D2Max, 5);
