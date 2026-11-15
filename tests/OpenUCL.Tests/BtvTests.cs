@@ -39,10 +39,11 @@ public class BtvUnitTests
     {
         double[] sorted = { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10,
                             11, 12, 13, 14, 15, 16 };
-        // TG eq. 3-1: p*n position with linear interpolation (n=16, p=0.95 -> h = 15.2).
-        Assert.Equal(15.2, Btv.PercentileProUcl(sorted, 0.95), 12);
-        // Position below 1 clamps to the smallest order statistic (n=2, p=0.1 -> 0.2).
-        Assert.Equal(5, Btv.PercentileProUcl(new double[] { 5, 6 }, 0.1), 12);
+        // Excel PERCENTILE.INC / ProUCL 4.1+ (TG text; scheda J parity):
+        // h = 1 + p(n-1) with linear interpolation (n=16, p=0.95 -> h = 15.25).
+        Assert.Equal(15.25, Btv.PercentileProUcl(sorted, 0.95), 12);
+        // n=2, p=0.1 -> h = 1.1 (in range, no clamp).
+        Assert.Equal(5.1, Btv.PercentileProUcl(new double[] { 5, 6 }, 0.1), 12);
     }
 
     [Fact]
@@ -91,6 +92,7 @@ public class BtvUnitTests
         Assert.Equal(0.9434384, b.UtlAchievedCC, 5);      // ProUCL FP: 0.9434384
         Assert.Equal(34.75, b.UplNonparametric, 2);       // ProUCL FP: 34.750000
         Assert.Equal(346.12633, b.UplChebyshev, 3);       // ProUCL FP: 346.12633
+        Assert.Equal(21.25, b.PercentileNonparametric, 2); // ProUCL FP: 21.250000 (Excel PERCENTILE.INC, scheda J)
     }
 
     /// <summary>
@@ -191,12 +193,18 @@ public class BtvGoldenTests
         Assert.Equal(24, data.Length);
 
         var b = Btv.Compute(data, 0.95, 0.95);
-        Assert.Equal(2.309, b.ToleranceFactorK, 3);       // TG: K = 2.309
-        Assert.InRange(b.UtlNormal, 17630, 17640);        // TG: 95% UTL 17635 (table rounds)
-        Assert.InRange(b.UplNormal1, 15243, 15253);       // TG: 95% UPL(1) 15248
-        Assert.InRange(BtvNormalPercentile(data, 0.90), 13248, 13258);   // TG: 90% percentile 13254
-        Assert.InRange(BtvNormalPercentile(data, 0.95), 14798, 14808);   // TG: 95% percentile 14803
-        Assert.InRange(BtvNormalPercentile(data, 0.99), 17702, 17714);   // TG: 99% percentile 17708
+        Assert.Equal(2.309, b.ToleranceFactorK, 3);       // TG: K = 2.309; ProUCL FP: 2.3090000 (tabled at n<=30; ours exact 2.30929, +0.0125%)
+        Assert.InRange(b.UtlNormal, 17630, 17640);        // TG: 95% UTL 17635; ProUCL FP: 17634.505 (K-prop delta ~1.3)
+        Assert.Equal(15247.630, b.UplNormal1, 1);         // ProUCL FP: 15247.630; TG: 15248
+        Assert.InRange(BtvNormalPercentile(data, 0.90), 13248, 13258);   // TG: 90% percentile 13254; ProUCL FP: 13253.570
+        Assert.InRange(BtvNormalPercentile(data, 0.95), 14798, 14808);   // TG: 95% percentile 14803; ProUCL FP: 14802.653
+        Assert.InRange(BtvNormalPercentile(data, 0.99), 17702, 17714);   // TG: 99% percentile 17708; ProUCL FP: 17708.474
+
+        // Full Precision ON (campaign 2, scheda J) parity extras:
+        Assert.Equal(16569.057, b.PercentileGamma, 0);    // ProUCL FP: 16569.057 (k*/theta*); TG: 16569
+        Assert.Equal(15385, b.PercentileNonparametric, 1); // ProUCL FP: 15385 (Excel PERCENTILE.INC)
+        Assert.Equal(26758.317, b.UplChebyshev, 2);       // ProUCL FP: 26758.317
+        Assert.Equal(0.7080110, b.UtlAchievedCC, 5);      // ProUCL FP: 0.7080110
     }
 
     private static double BtvNormalPercentile(double[] data, double p)
@@ -256,15 +264,17 @@ public class BtvGoldenTests
         Assert.Equal(24, data.Length);
 
         var b = Btv.Compute(data, 0.95, 0.95);
-        Assert.Equal(4.153, BtvKHat(data), 2);                            // TG: k-hat 4.153
-        Assert.Equal(4.345, b.UplGammaWh, 0.15);                          // TG: WH UPL 4.345
-        // TG Table 3-4 prints HW UPL 4.397, but that value implies mean-of-logs 0.589,
-        // contradicting the same table's printed 0.639; the formula (validated on the
-        // Chromium lognormal goldens) gives 4.63 from the raw data.
-        Assert.InRange(b.UplGammaHw, 4.30, 4.75);
-        Assert.InRange(b.UtlGammaWh, 5.30, 5.47);                         // TG: WH UTL 5.382
-        Assert.InRange(b.UtlGammaHw, 5.40, 5.65);                         // TG: HW UTL 5.524
-        Assert.InRange(b.PercentileGamma, 4.10, 4.45);                    // TG: 95% percentile 4.264
+        Assert.Equal(4.153, BtvKHat(data), 2);                            // TG: k-hat 4.153; ProUCL FP: 4.1529767
+        // Full Precision ON (campaign 2, scheda J, 2026-11-15): EXACT parity on
+        // every gamma limit — and the old "TG internally inconsistent" claim
+        // about the HW UPL was WRONG: ProUCL 5.2 live computes 4.3973341,
+        // identical to our eq. 3-16 value (the earlier 4.63 hand computation
+        // was an arithmetic error, now removed).
+        Assert.Equal(4.3451609, b.UplGammaWh, 3);                         // ProUCL FP: 4.3451609; TG: 4.345
+        Assert.Equal(4.3973341, b.UplGammaHw, 3);                         // ProUCL FP: 4.3973341; TG: 4.397
+        Assert.Equal(5.3816574, b.UtlGammaWh, 2);                         // ProUCL FP: 5.3816574 (K-prop delta ~6e-4)
+        Assert.Equal(5.5239468, b.UtlGammaHw, 2);                         // ProUCL FP: 5.5239468
+        Assert.Equal(4.2642964, b.PercentileGamma, 3);                    // ProUCL FP: 4.2642964 (k*/theta*); TG: 4.264
     }
 
     private static double BtvKHat(double[] data)
@@ -285,13 +295,14 @@ public class BtvGoldenTests
         var b = Btv.Compute(sorted, 0.95, 0.95);
         Assert.Equal(sorted[^1], b.UtlNonparametric, 10);                 // TG: UTL = 109 (max)
         Assert.Equal(24, b.UtlNonparametricOrder);                        // TG: order r = 24
-        Assert.Equal(0.708, b.UtlAchievedCC, 3);                          // TG: achieved CC 0.708
+        Assert.Equal(0.708, b.UtlAchievedCC, 3);                          // TG: achieved CC 0.708 (ProUCL FP: 0.7080110)
         Assert.Equal(sorted[^1], b.UslNonparametric, 10);                 // TG: USL = 109
-        // UPL95: position (n+1)*0.95 = 23.75 -> 98.5 + 0.75*(109-98.5) = 106.375
-        Assert.Equal(106.375, b.UplNonparametric, 1);                     // TG: 106.49 (raw-data rounding)
-        // Chebyshev UPL: mean + sqrt(19)*sd*sqrt(1+1/24) = 141.76 (TG: 141.8)
-        double mean = data.Average();
-        double sd = Math.Sqrt(data.Sum(v => (v - mean) * (v - mean)) / (data.Length - 1));
-        Assert.Equal(141.76, b.UplChebyshev, 1);
+        // UPL95: position (n+1)*0.95 = 23.75 -> x(23) + 0.75*(x(24) - x(23)).
+        // CONFIRMED at Full Precision ON (scheda J): ProUCL live prints
+        // 106.37500000 — the TG table's 106.49 comes from rounded inputs.
+        Assert.Equal(106.375, b.UplNonparametric, 1);
+        // Chebyshev UPL: mean + sqrt(19)*sd*sqrt(1+1/24); ProUCL FP: 141.84560
+        // (the earlier comment value 141.76 was a stale hand computation).
+        Assert.Equal(141.84560, b.UplChebyshev, 3);
     }
 }

@@ -212,12 +212,18 @@ public static class Btv
     }
 
     /// <summary>
-    /// Nonparametric percentile with the p*n order-statistic convention and linear
-    /// interpolation — the algorithm ProUCL 4.1+ adopted from Excel (TG eq. 3-1).
+    /// Nonparametric percentile with Excel's PERCENTILE.INC convention
+    /// (Hyndman-Fan type 7: h = 1 + p(n-1), linear interpolation) — the
+    /// algorithm ProUCL 4.1+ adopted from Excel 2007, as the TG text states.
+    /// Verified at Full Precision ON (campaign 2 scheda J, 2026-11-15):
+    /// Aluminum 95% → 15385 (ours 15385), Lead 95% → 91.72, silver 95% →
+    /// 21.25. Note: the TG eq. 3-1 worked example (x(16.15) for n=17, p=0.95)
+    /// uses p*n instead — the TG example and the TG text disagree; we follow
+    /// the text (Excel) and live ProUCL output.
     /// </summary>
     public static double PercentileProUcl(double[] sorted, double p)
     {
-        double h = p * sorted.Length;
+        double h = 1.0 + p * (sorted.Length - 1);
         if (h < 1) return sorted[0];
         if (h > sorted.Length) return sorted[^1];
         int lo = (int)Math.Floor(h);          // 1-based floor
