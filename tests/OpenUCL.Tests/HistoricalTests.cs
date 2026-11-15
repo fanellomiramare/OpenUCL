@@ -50,15 +50,16 @@ public class FinneyAndMvueTests
 
     /// <summary>
     /// Chebyshev (MVUE) on the silver data set WITHOUT the outlier 560
-    /// (n=55, meanlog 0.495774, sdlog 1.576629): ProUCL 5.2 live sheet
-    /// (2026-11-11): 90% 10.13, 95% 12.26, 97.5% 15.22, 99% 21.04 —
-    /// identical to TG Table 2-4 (12.26 at 95%). Second independent
-    /// confirmation of the SE-based formula.
+    /// (n=55, meanlog 0.4957742, sdlog 1.5766286): ProUCL 5.2 live sheet
+    /// (2026-11-11, FP OFF): 90% 10.13, 95% 12.26, 97.5% 15.22, 99% 21.04 —
+    /// identical to TG Table 2-4 (12.26 at 95%). Re-confirmed 2026-11-15 with
+    /// Full Precision ON (campaign 2, scheda H) to 7 decimals: 10.131866 /
+    /// 12.264328 / 15.224102 / 21.038006 — exact parity with our eq. 2-16 SE.
     /// </summary>
     [Fact]
     public void Chebyshev_mvue_on_silver_no_outlier_matches_ProUCL_live_sheet()
     {
-        double meanLog = 0.495774, sdLog = 1.576629;
+        double meanLog = 0.4957742, sdLog = 1.5766286;
         int n = 55;
         var (mvueMean, _) = LognormalHistorical.Mvue(meanLog, sdLog, n);
         double se = LognormalHistorical.MvueSe(meanLog, sdLog, n);
@@ -66,10 +67,10 @@ public class FinneyAndMvueTests
         Assert.Equal(5.424097, mvueMean, 5);
         Assert.Equal(1.569258, se, 5);
 
-        Assert.InRange(LognormalHistorical.ChebyshevMvueUcl(mvueMean, se, 0.90), 10.12, 10.14);
-        Assert.InRange(LognormalHistorical.ChebyshevMvueUcl(mvueMean, se, 0.95), 12.25, 12.27);
-        Assert.InRange(LognormalHistorical.ChebyshevMvueUcl(mvueMean, se, 0.975), 15.21, 15.23);
-        Assert.InRange(LognormalHistorical.ChebyshevMvueUcl(mvueMean, se, 0.99), 21.03, 21.05);
+        Assert.Equal(10.131866, LognormalHistorical.ChebyshevMvueUcl(mvueMean, se, 0.90), 4);
+        Assert.Equal(12.264328, LognormalHistorical.ChebyshevMvueUcl(mvueMean, se, 0.95), 4);
+        Assert.Equal(15.224102, LognormalHistorical.ChebyshevMvueUcl(mvueMean, se, 0.975), 4);
+        Assert.Equal(21.038006, LognormalHistorical.ChebyshevMvueUcl(mvueMean, se, 0.99), 4);
     }
 }
 
