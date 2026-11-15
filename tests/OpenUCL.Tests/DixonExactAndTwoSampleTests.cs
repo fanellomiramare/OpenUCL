@@ -106,11 +106,15 @@ public class TwoSampleTestsTests
 
     /// <summary>
     /// Golden: ProUCL 5.2 live output on its sample file WMW-with ties.xls
-    /// (X3 n=24 vs Y3 n=25, many ties; run 2026-11-11): rank sum W = 396.0,
-    /// Mean(U) = 300.0, SD(U) tie-adjusted 49.97, Z = -4.093, p (HA: X3 > Y3)
-    /// = 1.000, "Do Not Reject". The printed Z is only reachable WITH the
-    /// continuity correction — ProUCL uses the same continuity + tie
-    /// corrections as this implementation. Data embedded; runs on CI.
+    /// (X3 n=24 vs Y3 n=25, many ties; run 2026-11-11, re-confirmed 2026-11-15
+    /// campaign 2 scheda I with Full Precision ON): Z = -4.092925 IDENTICAL to
+    /// ours at 7 decimals, p = 0.9999787 (= ours 0.999979), "Do Not Reject" —
+    /// the continuity + tie correction conventions match digit-for-digit.
+    /// Note: ProUCL prints SD(U) = 49.965549 vs ours 49.9643 (delta 0.0025%),
+    /// but their printed Z implies sigma = 49.965666 — their displayed SD row
+    /// is inconsistent with their own Z by 1e-4; the quantities that matter
+    /// (Z, p) are at exact parity. FP OFF values: W = 396.0, Mean(U) = 300.0,
+    /// Z = -4.093, p = 1.000. Data embedded; runs on CI.
     /// </summary>
     [Fact]
     public void Wmw_with_ties_matches_ProUCL_live_output()
