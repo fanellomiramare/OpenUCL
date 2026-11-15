@@ -105,7 +105,14 @@ public static class Btv
         {
             var fit = GammaDistribution.FitMLE(data);
             kHat = fit.KHat; thHat = fit.ThetaHat;
-            ppGamma = fit.ThetaHat * GammaDistribution.Quantile(coverage, fit.KHat, 1.0);   // eq. 3-5
+            // TG eq. 3-5 with the BIAS-CORRECTED k*/theta* (not the MLE k-hat/theta-hat
+            // the TG text mentions): ProUCL 5.2 computes the gamma percentile on k*/theta*
+            // — verified at Full Precision ON on silver (scheda G, 2026-11-15): ours with
+            // k*/theta* = 69.624347 vs ProUCL 69.624346; with k-hat it would be 69.251793.
+            // Both parameterizations preserve the mean (k*theta). Same convention as the
+            // gamma UCLs, which already run on k* (nu*).
+            double kStar = fit.KStar, thStar = fit.ThetaStar;
+            ppGamma = thStar * GammaDistribution.Quantile(coverage, kStar, 1.0);   // eq. 3-5 (k*)
         }
 
         // Prediction limits (TG 3.5)

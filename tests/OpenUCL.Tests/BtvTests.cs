@@ -57,19 +57,19 @@ public class BtvUnitTests
 
     /// <summary>
     /// Golden: ProUCL 5.2 live BTV sheet on silver-data.xls (n=56, all
-    /// observations as detected, run 2026-11-11): Tolerance Factor K = 2.032.
-    /// Our exact noncentral-t K = 2.037739 (+0.28%): ProUCL computes K with
-    /// the Natrella approximation for n > 30, which converges to the exact
-    /// value as n grows. DISCOVERY: the exact K for n > 31 requires the
-    /// log-space Poisson mixture in NoncentralT.Cdf — the pre-2026-11-11
-    /// implementation silently underflowed for lambda > ~41 and returned
-    /// garbage K (order 1e121) exactly where this claim lives.
-    /// </summary>
-    /// <summary>
-    /// Golden: ProUCL 5.2 live BTV sheet on silver-data.xls (n=56, all
-    /// observations as detected, run 2026-11-11): d2max = 3.001, USL normal
-    /// 241.1, USL lognormal 343.3, USL gamma WH 129.8, HW 131.6. All our
-    /// parametric USLs match to display rounding. Data embedded; runs on CI.
+    /// observations as detected; run 2026-11-11 Full Precision OFF, re-run
+    /// 2026-11-15 campaign 2 scheda G with Full Precision ON).
+    /// DISCOVERY (FP ON): d2max = 3.0007348 vs our Grubbs closed form
+    /// 3.0007349 — EXACT parity to the printed 7th decimal: the "3.001 vs
+    /// 3.00073" delta was pure display rounding, there is NO deviation in
+    /// d2max, and every USL (normal/lognormal/WH/HW) matches to 7-8 digits.
+    /// The gamma percentile runs on k*/theta* for the same parity (see
+    /// Btv.cs). The only real deviation on the sheet remains K (Natrella
+    /// 2.0319819 vs exact 2.037739, -0.2825%), which propagates to the UTLs
+    /// (e.g. UTL normal 168.24178 vs our 168.675 — fully explained: with
+    /// K_Natrella our formula reproduces 168.24178 exactly). The exact-K
+    /// claim's history (pre-2026-11-11 underflow bug for n > 31) is in
+    /// decision #54.
     /// </summary>
     [Fact]
     public void Usl_silver_n56_matches_ProUCL_live_sheet()
@@ -77,12 +77,20 @@ public class BtvUnitTests
         double[] silver = Silver;
         var b = Btv.Compute(silver, 0.95, 0.95, 1);
 
-        Assert.Equal(3.0007349, b.D2Max, 5);
-        Assert.InRange(b.UslNormal, 240.9, 241.3);       // ProUCL: 241.1
-        Assert.InRange(b.UslLognormal, 343.1, 343.6);    // ProUCL: 343.3
-        Assert.InRange(b.UslGammaWh, 129.6, 130.0);      // ProUCL: 129.8
-        Assert.InRange(b.UslGammaHw, 131.4, 131.8);      // ProUCL: 131.6
+        Assert.Equal(3.0007349, b.D2Max, 5);             // ProUCL FP: 3.0007348
+        Assert.Equal(241.08653, b.UslNormal, 3);         // ProUCL FP: 241.08653
+        Assert.Equal(343.34052, b.UslLognormal, 3);      // ProUCL FP: 343.34052
+        Assert.Equal(129.78276, b.UslGammaWh, 3);        // ProUCL FP: 129.78276
+        Assert.Equal(131.60603, b.UslGammaHw, 3);        // ProUCL FP: 131.60603
         Assert.Equal(560, b.UslNonparametric, 0);
+
+        // Full-precision percentile and coverage parity (scheda G).
+        Assert.Equal(139.13192, b.PercentileNormal, 3);   // ProUCL FP: 139.13192
+        Assert.Equal(32.187273, b.PercentileLognormal, 3); // ProUCL FP: 32.187273
+        Assert.Equal(69.624347, b.PercentileGamma, 3);    // ProUCL FP: 69.624346 (k*/theta*)
+        Assert.Equal(0.9434384, b.UtlAchievedCC, 5);      // ProUCL FP: 0.9434384
+        Assert.Equal(34.75, b.UplNonparametric, 2);       // ProUCL FP: 34.750000
+        Assert.Equal(346.12633, b.UplChebyshev, 3);       // ProUCL FP: 346.12633
     }
 
     /// <summary>
@@ -127,7 +135,7 @@ public class BtvUnitTests
     {
         double k = NoncentralT.ToleranceFactor(56, 0.95, 0.95);
         Assert.Equal(2.037739, k, 5);
-        Assert.InRange(k, 2.02, 2.06);   // ProUCL (Natrella approx.): 2.032
+        Assert.InRange(k, 2.02, 2.06);   // ProUCL (Natrella approx., FP ON 2026-11-15): 2.0319819 → exact −0.2825%
     }
 
     [Fact]
