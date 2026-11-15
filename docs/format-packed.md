@@ -55,9 +55,17 @@ MW-01;TCE;1.2|0.8|<0.5|2.1|3.3
 
 Any OpenUCL command applied to a packed file processes **every series** and prints the
 per-series results to stdout (`summary` prints one row per series; `ucl`/`btv`/`test1`
-print the full ProUCL-style output sheet for each series). CSV/XLSX export to files and
-the per-series report bundling are planned for the batch-writer phase (Phase 4 of the
-roadmap).
+print the full ProUCL-style output sheet for each series).
+
+For `ucl`, `btv` and `gof`, `--out <dir>` (short form `-o <dir>`) switches to **batch
+output**: per-series sheets are written into `<dir>/<command>/` (sanitized
+`point__parameter.txt` names, automatic `(2)`, `(3)`... disambiguation) plus a summary
+CSV `<input>_<command>_summary.csv` in `<dir>` with a run-info comment header
+(command, arguments, UTC timestamp, series count) and one row per series (common
+statistics columns plus the command-specific block, and a trailing `warnings`
+column). With `--bundle` the sheets are appended into one combined
+`<input>_<command>_bundle.txt` file instead of one file per series. Without `--out`
+the per-series sheets keep going to stdout.
 
 A small packed example is available in the repository:
 [`examples/demo-packed.csv`](../examples/demo-packed.csv). The repository also carries
@@ -66,4 +74,6 @@ Technical Guide Example 2-2, kept as a ready-made input for reproducing the manu
 anchoring checks (Land's H and the exact tolerance factor).
 
 The same commands accept a group-by clause on long-format files to obtain the identical
-batch behaviour (`--group-col <group column> --value-col <value column>`).
+batch behaviour (`--group-col <group column> --value-col <value column>`). `test2`
+also accepts one long-format file with exactly two `--value-col` columns to compare
+column A against column B directly.

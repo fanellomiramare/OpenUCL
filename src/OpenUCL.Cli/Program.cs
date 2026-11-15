@@ -198,6 +198,8 @@ internal static class Program
     {
         double alpha = 0.05;
         bool lognormal = false, gamma = false;
+        string? outDir = null;
+        bool bundle = false;
         var rest = new List<string>();
         for (int i = 0; i < args.Length; i++)
         {
@@ -209,6 +211,10 @@ internal static class Program
                     lognormal = true; break;
                 case "--gamma":
                     gamma = true; break;
+                case "--out" or "-o" when i + 1 < args.Length:
+                    outDir = args[++i]; break;
+                case "--bundle":
+                    bundle = true; break;
                 default:
                     rest.Add(args[i]); break;
             }
@@ -217,26 +223,39 @@ internal static class Program
             throw new FormatException("--gamma and --lognormal are mutually exclusive");
         if (alpha is < 0.005 or > 0.495)
             throw new FormatException("--alpha must be in (0.005, 0.495)");
+        if (bundle && outDir is null)
+            throw new FormatException("--bundle requires --out");
 
-        return gamma ? RunGammaGof(rest.ToArray(), alpha) : RunNormalGof(rest.ToArray(), alpha, lognormal);
+        return gamma
+            ? RunGammaGof(rest.ToArray(), alpha, outDir, bundle)
+            : RunNormalGof(rest.ToArray(), alpha, lognormal, outDir, bundle);
     }
 
-    private static int RunNormalGof(string[] args, double alpha, bool lognormal)
+    private static int RunNormalGof(string[] args, double alpha, bool lognormal, string? outDir, bool bundle)
     {
         string distribution = lognormal ? "lognormal" : "normal";
         Console.WriteLine($"goodness-of-fit, {distribution} distribution, alpha = {alpha}");
         Console.WriteLine($"{"point",-10} {"parameter",-8} {"N",5} {"ND",4} {"S-W W",8} {"p",8} {"W-crit",8} {"Lill D",8} {"D-crit",8} conclusion");
         Console.WriteLine(new string('-', 92));
 
+        var spec = InputSpec.Parse(args);
+        BatchRun? batch = outDir is null ? null : new BatchRun(outDir, "gof", spec.File, bundle);
+        batch?.SetHeader("point", "parameter", "n", "nd", "sw_w", "sw_p", "sw_w_crit",
+            "lillifors_d", "d_crit", "conclusion", "warnings");
+
         int series = 0;
-        foreach (var s in InputSpec.Parse(args).ReadSeries())
+        foreach (var s in spec.ReadSeries())
         {
+            var warns = new List<string>();
             double[] detected = s.DetectedValues();
             if (lognormal)
             {
                 int nonPositive = detected.Count(v => v <= 0);
                 if (nonPositive > 0)
-                    Console.Error.WriteLine($"warning: {s.PointId}/{s.Parameter}: {nonPositive} non-positive values excluded from lognormal GOF.");
+                {
+                    warns.Add($"{nonPositive} non-positive values excluded from lognormal GOF");
+                    Console.Error.WriteLine($"warning: {s.PointId}/{s.Parameter}: {warns[0]}.");
+                }
                 detected = detected.Where(v => v > 0).Select(v => Math.Log(v)).ToArray();
             }
 
@@ -260,15 +279,23 @@ internal static class Program
                 _ => $"not {distribution}",
             };
             Console.WriteLine($"{Truncate(s.PointId, 10),-10} {Truncate(s.Parameter, 8),-8} {detected.Length,5} {s.NondetectCount,4} {w,8} {p,8} {wc,8} {d,8} {dc,8} {conclusionText}");
+            batch?.AddRow(s.PointId, s.Parameter, detected.Length.ToString(CultureInfo.InvariantCulture),
+                s.NondetectCount.ToString(CultureInfo.InvariantCulture), w, p, wc, d, dc, conclusionText,
+                warns.Count == 0 ? "" : $"{warns.Count}: {warns[0]}");
             series++;
         }
         Console.WriteLine(new string('-', 92));
         Console.WriteLine($"{series} series. S-W = Shapiro-Wilk (Royston AS R94); Lill = Lilliefors K-S");
         Console.WriteLine("(D-crit for n<=50 uses the large-sample formula: ProUCL's exact Molin-Abdi table pending).");
+        if (batch is not null)
+        {
+            batch.Flush($"gof {string.Join(" ", args)} --{distribution}", series);
+            Console.WriteLine($"(summary: {batch.SummaryPath})");
+        }
         return 0;
     }
 
-    private static int RunGammaGof(string[] args, double requestedAlpha)
+    private static int RunGammaGof(string[] args, double requestedAlpha, string? outDir, bool bundle)
     {
         // Gamma critical values are tabulated only at 0.10, 0.05, 0.01 (as in ProUCL).
         double alpha = requestedAlpha <= 0.02 ? 0.01 : requestedAlpha <= 0.075 ? 0.05 : 0.10;
@@ -279,9 +306,15 @@ internal static class Program
         Console.WriteLine($"{"point",-10} {"parameter",-8} {"N",5} {"ND",4} {"k-hat",8} {"theta",8} {"A-D A2",8} {"A2-crit",8} {"KS D",8} {"D-crit",8} conclusion");
         Console.WriteLine(new string('-', 104));
 
+        var spec = InputSpec.Parse(args);
+        BatchRun? batch = outDir is null ? null : new BatchRun(outDir, "gof", spec.File, bundle);
+        batch?.SetHeader("point", "parameter", "n", "nd", "k_hat", "theta", "ad_a2", "ad_crit",
+            "ks_d", "ks_crit", "conclusion", "warnings");
+
         int series = 0;
-        foreach (var s in InputSpec.Parse(args).ReadSeries())
+        foreach (var s in spec.ReadSeries())
         {
+            var warns = new List<string>();
             double[] detected = s.DetectedValues();
             string kh = "-", th = "-", a2 = "-", ac = "-", d = "-", dc = "-";
             string conclusionText = "not gamma";
@@ -310,19 +343,29 @@ internal static class Program
                 }
                 catch (ArgumentException ex)
                 {
+                    warns.Add(ex.Message);
                     Console.Error.WriteLine($"warning: {s.PointId}/{s.Parameter}: {ex.Message}");
                 }
             }
             else if (detected.Length >= 3)
             {
-                Console.Error.WriteLine($"warning: {s.PointId}/{s.Parameter}: non-positive values present, gamma GOF not applicable.");
+                warns.Add("non-positive values present, gamma GOF not applicable");
+                Console.Error.WriteLine($"warning: {s.PointId}/{s.Parameter}: {warns[0]}.");
             }
 
             Console.WriteLine($"{Truncate(s.PointId, 10),-10} {Truncate(s.Parameter, 8),-8} {detected.Length,5} {s.NondetectCount,4} {kh,8} {th,8} {a2,8} {ac,8} {d,8} {dc,8} {conclusionText}");
+            batch?.AddRow(s.PointId, s.Parameter, detected.Length.ToString(CultureInfo.InvariantCulture),
+                s.NondetectCount.ToString(CultureInfo.InvariantCulture), kh, th, a2, ac, d, dc, conclusionText,
+                warns.Count == 0 ? "" : $"{warns.Count}: {warns[0]}");
             series++;
         }
         Console.WriteLine(new string('-', 104));
         Console.WriteLine($"{series} series. Critical values: Singh, Singh and Iaci (2002), ProUCL 5.2 Technical Guide Appendix A.");
+        if (batch is not null)
+        {
+            batch.Flush($"gof --gamma {string.Join(" ", args)}", series);
+            Console.WriteLine($"(summary: {batch.SummaryPath})");
+        }
         return 0;
     }
 
@@ -424,6 +467,8 @@ internal static class Program
         double cc = 0.95;
         int boot = Ucl.DefaultBootstrapRuns;
         ulong seed = Ucl.DefaultBootstrapSeed;
+        string? outDir = null;
+        bool bundle = false;
         var rest = new List<string>();
         for (int i = 0; i < args.Length; i++)
         {
@@ -435,6 +480,10 @@ internal static class Program
                     boot = int.Parse(args[++i], CultureInfo.InvariantCulture); break;
                 case "--seed" when i + 1 < args.Length:
                     seed = ulong.Parse(args[++i], CultureInfo.InvariantCulture); break;
+                case "--out" or "-o" when i + 1 < args.Length:
+                    outDir = args[++i]; break;
+                case "--bundle":
+                    bundle = true; break;
                 default:
                     rest.Add(args[i]); break;
             }
@@ -443,13 +492,33 @@ internal static class Program
         var spec = InputSpec.Parse(rest.ToArray());
         string fileHash = ShortHash(spec.File);
 
+        BatchRun? batch = outDir is null ? null : new BatchRun(outDir, "ucl", spec.File, bundle);
+        batch?.SetHeader("point", "parameter", "n", "nd", "nd_pct", "min", "max", "median", "mean", "sd",
+            "km_mean", "km_sd", "gof", "recommended_method", "recommended_ucl",
+            "ucl_student_t", "ucl_gamma_adjusted", "ucl_km_t", "warnings");
+
         int series = 0;
         foreach (var s in spec.ReadSeries())
         {
+            var warns = new List<string>();
+            void Warn(string message)
+            {
+                warns.Add(message);
+                Console.Error.WriteLine($"warning: {s.PointId}/{s.Parameter}: {message}");
+            }
+            string WarningsCell() => warns.Count == 0 ? "" : $"{warns.Count}: {warns[0]}";
+
             double[] detected = s.DetectedValues();
             if (detected.Length < 3)
             {
-                Console.Error.WriteLine($"warning: {s.PointId}/{s.Parameter}: fewer than 3 detects, UCLs skipped.");
+                Warn("fewer than 3 detects, UCLs skipped");
+                batch?.AddRow(new[]
+                {
+                    s.PointId, s.Parameter, s.N.ToString(CultureInfo.InvariantCulture),
+                    s.NondetectCount.ToString(CultureInfo.InvariantCulture),
+                    s.N > 0 ? (100.0 * s.NondetectCount / s.N).ToString("G4", CultureInfo.InvariantCulture) : "0",
+                    "", "", "", "", "", "", "", "", "", "", "", "", "", WarningsCell()
+                });
                 continue;
             }
 
@@ -477,10 +546,7 @@ internal static class Program
             if (s.NondetectCount > 0 && detected.Length >= 2)
             {
                 try { un = UclWithNd.Compute(s.Observations, cc, boot, seed); }
-                catch (ArgumentException ex)
-                {
-                    Console.Error.WriteLine($"warning: {s.PointId}/{s.Parameter}: ND UCLs: {ex.Message}");
-                }
+                catch (ArgumentException ex) { Warn($"ND UCLs: {ex.Message}"); }
             }
 
             var sheet = new ReportSheet($"OpenUCL {Version} — UCL / EPC ESTIMATION ({cc * 100:G4}% confidence)");
@@ -529,10 +595,12 @@ internal static class Program
             var ucls = sheet.AddSection($"ucls / epcs ({cc * 100:G4}% confidence)");
             ucls.ColumnsAre("method", "UCL", "reference");
             string? recommended = null; string rationale = "";
+            string? recMethod = null; double? recValue = null;
             if (un is not null && gammaPass && !double.IsNaN(un.GrosGammaAdjusted))
             {
                 ucls.AddRowHighlighted("GROS gamma adjusted", F(un.GrosGammaAdjusted), "TG eq. 2-35 on GROS data (n<=50)");
                 recommended = $"GROS gamma adjusted UCL = {F(un.GrosGammaAdjusted)}";
+                recMethod = "GROS gamma adjusted"; recValue = un.GrosGammaAdjusted;
                 rationale = $"nondetects present ({s.NondetectCount} of {s.N}); detected data approximate gamma " +
                             $"(one of A-D/K-S passes at {alpha:G2}); gamma UCLs computed on the GROS-imputed data set " +
                             "(TG example 4-4 logic).";
@@ -541,36 +609,42 @@ internal static class Program
             {
                 ucls.AddRowHighlighted("KM (t)", F(un.KmT), "KM mean + t * SE");
                 recommended = $"KM (t) UCL = {F(un.KmT)}";
+                recMethod = "KM (t)"; recValue = un.KmT;
                 rationale = "detected data are approximately normal; KM estimates in the t equation (TG section 4.6).";
             }
             else if (gammaPass && u.GammaApplicable && !double.IsNaN(u.GammaAdjusted))
             {
                 ucls.AddRowHighlighted("gamma adjusted (n<=50)", F(u.GammaAdjusted), "TG eq. 2-35, table 2-2");
                 recommended = $"gamma adjusted UCL = {F(u.GammaAdjusted)}";
+                recMethod = "gamma adjusted"; recValue = u.GammaAdjusted;
                 rationale = $"n<=50 and detected data approximate gamma (one of A-D/K-S passes at {alpha:G2}); k-star = {F(u.KStar)}.";
             }
             else if (gammaPass && u.GammaApplicable)
             {
                 ucls.AddRowHighlighted("gamma approximate (n>50)", F(u.GammaApproximate), "TG eq. 2-34");
                 recommended = $"gamma approximate UCL = {F(u.GammaApproximate)}";
+                recMethod = "gamma approximate"; recValue = u.GammaApproximate;
                 rationale = $"n>50 and detected data approximate gamma; k-star = {F(u.KStar)}.";
             }
             else if (normalPass)
             {
                 ucls.AddRowHighlighted("Student's t", F(u.StudentT), "TG eq. 2-32");
                 recommended = $"Student's t UCL = {F(u.StudentT)}";
+                recMethod = "Student's t"; recValue = u.StudentT;
                 rationale = "detected data are approximately normal (ProUCL 5.2 logic).";
             }
             else if (Math.Abs(u.Skewness) <= 1.0 && un is null)
             {
                 ucls.AddRowHighlighted("bootstrap-t", F(u.BootstrapT), "TG eq. 2-62");
                 recommended = $"bootstrap-t UCL = {F(u.BootstrapT)}";
+                recMethod = "bootstrap-t"; recValue = u.BootstrapT;
                 rationale = "no parametric distribution identified; mild skewness favors the bootstrap-t.";
             }
             else if (un is not null)
             {
                 ucls.AddRowHighlighted("KM percentile bootstrap", F(un.KmPercentileBootstrap), "bootstrap of observation pairs");
                 recommended = $"KM percentile bootstrap UCL = {F(un.KmPercentileBootstrap)}";
+                recMethod = "KM percentile bootstrap"; recValue = un.KmPercentileBootstrap;
                 rationale = "no parametric distribution identified; KM bootstrap accounts for the nondetects " +
                             "(skewness caveat: coverage may fall short of nominal for highly skewed data).";
             }
@@ -584,6 +658,7 @@ internal static class Program
             {
                 ucls.AddRowHighlighted("bootstrap-t", F(u.BootstrapT), "TG eq. 2-62");
                 recommended = $"bootstrap-t UCL = {F(u.BootstrapT)}";
+                recMethod = "bootstrap-t"; recValue = u.BootstrapT;
                 rationale = "large sample: the bootstrap-t is the preferred nonparametric choice.";
             }
 
@@ -639,7 +714,7 @@ internal static class Program
             }
             catch (Exception ex) when (ex is ArgumentException or OverflowException)
             {
-                Console.Error.WriteLine($"warning: MVUE lognormal: {ex.Message}");
+                Warn($"MVUE lognormal: {ex.Message}");
             }
 
             var rec = sheet.AddSection("recommendation");
@@ -673,10 +748,36 @@ internal static class Program
                                   "when normal, the KM (t) UCL. DL/2-based UCLs are available but not recommended (TG section 4.2.3).");
             }
 
-            Console.Write(sheet.RenderText());
+            if (batch is null) Console.Write(sheet.RenderText());
+            else batch.WriteSheet(s.PointId, s.Parameter, sheet.RenderText());
+
+            if (batch is not null)
+            {
+                var st = Descriptive.Compute(detected);
+                string ndPct = s.N > 0 ? (100.0 * s.NondetectCount / s.N).ToString("G4", CultureInfo.InvariantCulture) : "0";
+                string gofTag = gammaPass ? "gamma"
+                    : normalPass ? (normalConclusion == GofConclusion.Normal ? "normal" : "approx. normal")
+                    : "no fit";
+                batch.AddRow(s.PointId, s.Parameter, s.N.ToString(CultureInfo.InvariantCulture),
+                    s.NondetectCount.ToString(CultureInfo.InvariantCulture), ndPct,
+                    BatchRun.Num(st.Min), BatchRun.Num(st.Max), BatchRun.Num(st.Median),
+                    BatchRun.Num(st.Mean), BatchRun.Num(st.StandardDeviation),
+                    BatchRun.Num(un?.KmMean), BatchRun.Num(un?.KmSd),
+                    gofTag, recMethod ?? "", BatchRun.Num(recValue),
+                    BatchRun.Num(u.StudentT), BatchRun.Num(u.GammaAdjusted), BatchRun.Num(un?.KmT),
+                    WarningsCell());
+            }
             series++;
         }
-        Console.WriteLine($"({series} series processed.)");
+        if (batch is null)
+        {
+            Console.WriteLine($"({series} series processed.)");
+        }
+        else
+        {
+            batch.Flush($"ucl {string.Join(" ", args)}", series);
+            Console.WriteLine($"({series} series processed; sheets: {batch.SheetsDir}; summary: {batch.SummaryPath})");
+        }
         return 0;
     }
 
@@ -697,6 +798,8 @@ internal static class Program
     {
         double cc = 0.95, coverage = 0.95;
         int k = 5;
+        string? outDir = null;
+        bool bundle = false;
         var rest = new List<string>();
         for (int i = 0; i < args.Length; i++)
         {
@@ -708,6 +811,10 @@ internal static class Program
                     coverage = double.Parse(args[++i], CultureInfo.InvariantCulture); break;
                 case "--k" when i + 1 < args.Length:
                     k = int.Parse(args[++i], CultureInfo.InvariantCulture); break;
+                case "--out" or "-o" when i + 1 < args.Length:
+                    outDir = args[++i]; break;
+                case "--bundle":
+                    bundle = true; break;
                 default:
                     rest.Add(args[i]); break;
             }
@@ -718,13 +825,32 @@ internal static class Program
         var spec = InputSpec.Parse(rest.ToArray());
         string fileHash = ShortHash(spec.File);
 
+        BatchRun? batch = outDir is null ? null : new BatchRun(outDir, "btv", spec.File, bundle);
+        batch?.SetHeader("point", "parameter", "n", "nd", "nd_pct", "min", "max", "median", "mean", "sd",
+            "km_mean", "km_sd", "upl1_normal", "utl_normal", "usl_normal", "utl_nonparam_cc", "warnings");
+
         int series = 0;
         foreach (var s in spec.ReadSeries())
         {
+            var warns = new List<string>();
+            void Warn(string message)
+            {
+                warns.Add(message);
+                Console.Error.WriteLine($"warning: {s.PointId}/{s.Parameter}: {message}");
+            }
+            string WarningsCell() => warns.Count == 0 ? "" : $"{warns.Count}: {warns[0]}";
+
             double[] values = s.DetectedValues();
             if (values.Length < 3)
             {
-                Console.Error.WriteLine($"warning: {s.PointId}/{s.Parameter}: fewer than 3 detects, BTVs skipped.");
+                Warn("fewer than 3 detects, BTVs skipped");
+                batch?.AddRow(new[]
+                {
+                    s.PointId, s.Parameter, s.N.ToString(CultureInfo.InvariantCulture),
+                    s.NondetectCount.ToString(CultureInfo.InvariantCulture),
+                    s.N > 0 ? (100.0 * s.NondetectCount / s.N).ToString("G4", CultureInfo.InvariantCulture) : "0",
+                    "", "", "", "", "", "", "", "", "", "", "", WarningsCell()
+                });
                 continue;
             }
             var b = Btv.Compute(values, cc, coverage, k);
@@ -780,11 +906,12 @@ internal static class Program
             }
             usl.AddRow("USL nonparametric (max)", F(b.UslNonparametric), "TG section 3.6; use only on outlier-free single populations");
 
+            BtvNdResult? bn = null;
             if (s.NondetectCount > 0)
             {
                 try
                 {
-                    var bn = BtvWithNd.Compute(s.Observations, cc, coverage, k);
+                    bn = BtvWithNd.Compute(s.Observations, cc, coverage, k);
                     var ndSec = sheet.AddSection("btvs accounting for nondetects (KM estimates)");
                     ndSec.ColumnsAre("limit", "value", "reference");
                     ndSec.AddRow("KM mean / sd", F(bn.KmMean), "TG eq. 4-1..4-3");
@@ -819,16 +946,35 @@ internal static class Program
                     ndSec.AddNote("KM on transformed scale: detects and NDs (at their DL) are all transformed before the KM (TG 5.3.x). " +
                                   "gamma-KM percentile: chi-square route (TG 5.3.2.3) - ProUCL-consistent within 0.5% (k-hat estimation detail).");
                 }
-                catch (ArgumentException ex)
-                {
-                    Console.Error.WriteLine($"warning: {s.PointId}/{s.Parameter}: BTV-ND: {ex.Message}");
-                }
+                catch (ArgumentException ex) { Warn($"BTV-ND: {ex.Message}"); }
             }
 
-            Console.Write(sheet.RenderText());
+            if (batch is null) Console.Write(sheet.RenderText());
+            else batch.WriteSheet(s.PointId, s.Parameter, sheet.RenderText());
+
+            if (batch is not null)
+            {
+                var st = Descriptive.Compute(values);
+                string ndPct = s.N > 0 ? (100.0 * s.NondetectCount / s.N).ToString("G4", CultureInfo.InvariantCulture) : "0";
+                batch.AddRow(s.PointId, s.Parameter, s.N.ToString(CultureInfo.InvariantCulture),
+                    s.NondetectCount.ToString(CultureInfo.InvariantCulture), ndPct,
+                    BatchRun.Num(st.Min), BatchRun.Num(st.Max), BatchRun.Num(st.Median),
+                    BatchRun.Num(st.Mean), BatchRun.Num(st.StandardDeviation),
+                    BatchRun.Num(bn?.KmMean), BatchRun.Num(bn?.KmSd),
+                    BatchRun.Num(b.UplNormal1), BatchRun.Num(b.UtlNormal), BatchRun.Num(b.UslNormal),
+                    BatchRun.Num(b.UtlAchievedCC), WarningsCell());
+            }
             series++;
         }
-        Console.WriteLine($"({series} series processed.)");
+        if (batch is null)
+        {
+            Console.WriteLine($"({series} series processed.)");
+        }
+        else
+        {
+            batch.Flush($"btv {string.Join(" ", args)}", series);
+            Console.WriteLine($"({series} series processed; sheets: {batch.SheetsDir}; summary: {batch.SummaryPath})");
+        }
         return 0;
     }
 
@@ -1011,9 +1157,37 @@ internal static class Program
         if (files.Count == 1)
         {
             var spec = InputSpec.Parse(optionArgs.Append(files[0]).ToArray());
-            if (spec.GroupColumn is null || groupA is null || groupB is null)
-                throw new FormatException("single-file grouped mode requires --group-col, --group-a and --group-b");
-            var tableOptions = new LongTableReadOptions
+            if (spec.GroupColumn is null && spec.ValueColumns.Count == 2 && groupA is null && groupB is null)
+            {
+                // two-column paired mode: the first selected column vs the second
+                var tableOptions = new LongTableReadOptions
+                {
+                    ColumnSeparator = spec.ColumnSep ?? ';',
+                    HasHeader = !spec.NoHeader,
+                    NdFlagColumn = spec.NdFlagColumn,
+                    NdFlagValue = spec.NdFlagValue,
+                    DetectionLimitColumn = spec.DlColumn,
+                };
+                var table = LongTableReader.ReadTable(spec.File, tableOptions);
+                foreach (string col in spec.ValueColumns)
+                    if (table.ColumnIndex(col) < 0)
+                        throw new FormatException($"column '{col}' not found in {spec.File}");
+                obsA = LongTableReader.ToSeries(table,
+                        new SeriesSelection { ValueColumns = new[] { spec.ValueColumns[0] } }, tableOptions)
+                    .SelectMany(s => s.Observations).ToList();
+                obsB = LongTableReader.ToSeries(table,
+                        new SeriesSelection { ValueColumns = new[] { spec.ValueColumns[1] } }, tableOptions)
+                    .SelectMany(s => s.Observations).ToList();
+                description = $"{spec.File}: column '{spec.ValueColumns[0]}' (n={obsA.Count}) vs " +
+                              $"column '{spec.ValueColumns[1]}' (n={obsB.Count})";
+            }
+            else if (spec.GroupColumn is null || groupA is null || groupB is null)
+                throw new FormatException(
+                    "single-file modes: --group-col/--group-a/--group-b (grouped two samples), " +
+                    "or exactly two --value-col columns (column A vs column B), or two input files");
+            else
+            {
+                var tableOptions = new LongTableReadOptions
             {
                 ColumnSeparator = spec.ColumnSep ?? ';',
                 HasHeader = !spec.NoHeader,
@@ -1044,6 +1218,7 @@ internal static class Program
             obsB = series.Where(s => string.Equals(s.PointId, groupB, StringComparison.OrdinalIgnoreCase))
                 .SelectMany(s => s.Observations).ToList();
             description = $"{spec.File}: {spec.GroupColumn} '{groupA}' (n={obsA.Count}) vs '{groupB}' (n={obsB.Count}), column '{valueColumns[0]}'";
+            }
         }
         else
         {
@@ -1251,8 +1426,9 @@ internal static class Program
                                     adds ND-BTV via KM when nondetects are present)
               outlier <file>        Dixon (n<=25) and Rosner (n>=25) outlier tests
               test1 <file>          one-sample tests vs Cs (t, sign, Wilcoxon), --cs required
-              test2 <file>          two-sample tests (t, Satterthwaite, WMW, F): two files or
-                                    one file with --group-col/--group-a/--group-b; adds
+              test2 <file>          two-sample tests (t, Satterthwaite, WMW, F): two files, one
+                                    file with --group-col/--group-a/--group-b, or one long
+                                    file with exactly two --value-col columns (A vs B); adds
                                     Gehan and Tarone-Ware when nondetects are present
               trend <file>          Mann-Kendall, Theil-Sen and OLS trend per series
               anova <file>          one-way ANOVA + Kruskal-Wallis across groups
@@ -1272,6 +1448,10 @@ internal static class Program
               --nd-flag-value <s>   long format: flag value marking nondetects (default ND)
               --dl-col <name>       long format: detection limit column (default: value column holds DL)
               --alpha <x>           gof/ucl: significance level (default 0.05)
+              --out <dir>, -o <dir> ucl/btv/gof batch mode: per-series sheets in
+                                    <dir>/<command>/ + summary CSV (<input>_<command>_summary.csv
+                                    with run-info header; one row per series)
+              --bundle              with --out: one combined sheet file instead of per-series files
               --boot <n>            ucl: bootstrap runs (default 2000)
               --seed <n>            ucl: bootstrap seed (default 381, printed on sheets)
               --lognormal           gof: test the log-transformed data

@@ -97,6 +97,107 @@ public class CliIntegrationTests
     }
 
     [Fact]
+    public void Cli_batch_out_writes_sheets_and_summary_for_ucl_btv_gof()
+    {
+        string? exe = FindCli();
+        if (exe is null) return;   // CLI not built — skip (run dotnet build -c Release)
+
+        var input = Path.Combine(Path.GetTempPath(), $"openucl-batch-it-{Guid.NewGuid():N}.csv");
+        File.WriteAllText(input,
+            "point;parameter;values\n" +
+            "MW-01;TCE;\"1.2;0.8;<0.5;2.1;3.3\"\n" +
+            "MW-02;TCE;\"4;5;6;7\"\n");
+        var outDir = Path.Combine(Path.GetTempPath(), $"openucl-batch-it-{Guid.NewGuid():N}");
+
+        try
+        {
+            foreach (var cmd in new[] { "ucl", "btv", "gof" })
+            {
+                var (code, output) = Run(exe, $"{cmd} \"{input}\" --out \"{outDir}\"");
+                Assert.Equal(0, code);
+                Assert.Contains("summary:", output);
+            }
+
+            // per-series sheets in per-command subfolders
+            Assert.Equal(2, Directory.GetFiles(Path.Combine(outDir, "ucl")).Length);
+            Assert.Equal(2, Directory.GetFiles(Path.Combine(outDir, "btv")).Length);
+
+            // summaries: run-info header + one row per series
+            string baseName = Path.GetFileNameWithoutExtension(input);
+            string uclSummary = File.ReadAllText(Path.Combine(outDir, baseName + "_ucl_summary.csv"));
+            Assert.StartsWith("# command: ucl", uclSummary);
+            Assert.StartsWith("# series: 2", uclSummary.Split('\n')[3]);
+            Assert.Contains("MW-01", uclSummary);
+            Assert.Contains("recommended_method", uclSummary);
+
+            Assert.True(File.Exists(Path.Combine(outDir, baseName + "_gof_summary.csv")));
+        }
+        finally
+        {
+            File.Delete(input);
+            if (Directory.Exists(outDir)) Directory.Delete(outDir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void Cli_batch_bundle_writes_one_combined_file()
+    {
+        string? exe = FindCli();
+        if (exe is null) return;
+
+        var input = Path.Combine(Path.GetTempPath(), $"openucl-bundle-it-{Guid.NewGuid():N}.csv");
+        File.WriteAllText(input,
+            "point;parameter;values\n" +
+            "MW-01;TCE;\"1.2;0.8;2.1;3.3\"\n" +
+            "MW-02;TCE;\"4;5;6;7\"\n");
+        var outDir = Path.Combine(Path.GetTempPath(), $"openucl-bundle-it-{Guid.NewGuid():N}");
+
+        try
+        {
+            var (code, output) = Run(exe, $"ucl \"{input}\" --out \"{outDir}\" --bundle");
+            Assert.Equal(0, code);
+            Assert.Contains("summary:", output);
+
+            var sheets = Directory.GetFiles(Path.Combine(outDir, "ucl"));
+            Assert.Single(sheets);
+            string text = File.ReadAllText(sheets[0]);
+            Assert.Contains("MW-01", text);
+            Assert.Contains("MW-02", text);
+        }
+        finally
+        {
+            File.Delete(input);
+            if (Directory.Exists(outDir)) Directory.Delete(outDir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void Cli_test2_single_file_two_value_columns()
+    {
+        string? exe = FindCli();
+        if (exe is null) return;
+
+        var input = Path.Combine(Path.GetTempPath(), $"openucl-t2col-it-{Guid.NewGuid():N}.csv");
+        File.WriteAllText(input,
+            "Point;Pre;Post\n" +
+            "P1;1.5;2.1\nP1;2.2;2.4\nP1;2.9;3.1\n" +
+            "P2;0.8;1.9\nP2;1.2;2.6\nP2;3.1;3.4\n");
+
+        try
+        {
+            var (code, output) = Run(exe, $"test2 \"{input}\" --value-col Pre --value-col Post");
+            Assert.Equal(0, code);
+            Assert.Contains("TWO-SAMPLE HYPOTHESIS TESTS", output);
+            Assert.Contains("column 'Pre' (n=6) vs column 'Post' (n=6)", output);
+            Assert.Contains("Wilcoxon-Mann-Whitney", output);
+        }
+        finally
+        {
+            File.Delete(input);
+        }
+    }
+
+    [Fact]
     public void Cli_pipeline_produces_expected_sheet_markers()
     {
         string? exe = FindCli();

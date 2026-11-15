@@ -11,6 +11,7 @@
   <ItemGroup>
     <ProjectReference Include="..\OpenUCL.Core\OpenUCL.Core.csproj" />
     <ProjectReference Include="..\OpenUCL.Data\OpenUCL.Data.csproj" />
+    <InternalsVisibleTo Include="OpenUCL.Tests" />
   </ItemGroup>
 
 </Project>

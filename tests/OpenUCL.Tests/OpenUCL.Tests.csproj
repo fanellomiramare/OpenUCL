@@ -14,6 +14,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\OpenUCL.Core\OpenUCL.Core.csproj" />
     <ProjectReference Include="..\..\src\OpenUCL.Data\OpenUCL.Data.csproj" />
+    <ProjectReference Include="..\..\src\OpenUCL.Cli\OpenUCL.Cli.csproj" />
   </ItemGroup>
 
   <ItemGroup>
