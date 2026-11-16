@@ -61,10 +61,12 @@ For `ucl`, `btv`, `gof`, `ndstats`, `test1`, `test2`, `outlier`, `trend` and `an
 `--out <dir>` (short form `-o <dir>`) switches to **batch output**: per-series sheets
 are written into `<dir>/<command>/` (sanitized `point__parameter.txt` names, automatic
 `(2)`, `(3)`... disambiguation; `anova` writes a single file-level sheet) plus a
-summary CSV `<input>_<command>_summary.csv` in `<dir>` with a run-info comment header
-(command, arguments, UTC timestamp, series count) and one row per series or comparison
-(common statistics columns plus the command-specific block, and a trailing `warnings`
-column). With `--bundle` the sheets are appended into one combined
+summary in two formats, `<input>_<command>_summary.csv` and
+`<input>_<command>_summary.xlsx`, in `<dir>`. Both carry the run-info header (command,
+arguments, UTC timestamp, series count) and one row per series or comparison (common
+statistics columns plus the command-specific block, and a trailing `warnings`
+column); in the XLSX the run info lives on a second sheet and numeric cells are real
+numbers. With `--bundle` the sheets are appended into one combined
 `<input>_<command>_bundle.txt` file instead of one file per series. Without `--out`
 the per-series sheets keep going to stdout.
 

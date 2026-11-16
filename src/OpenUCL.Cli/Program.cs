@@ -1660,8 +1660,8 @@ internal static class Program
               --alpha <x>           gof/ucl: significance level (default 0.05)
               --out <dir>, -o <dir> batch mode for ucl/btv/gof/ndstats/test1/test2/outlier/
                                     trend/anova: per-series sheets in <dir>/<command>/ +
-                                    summary CSV (<input>_<command>_summary.csv with
-                                    run-info header; one row per series or comparison)
+                                    summary CSV and XLSX (<input>_<command>_summary.csv/.xlsx
+                                    with run-info header; one row per series or comparison)
               --bundle              with --out: one combined sheet file instead of per-series files
               --boot <n>            ucl: bootstrap runs (default 2000)
               --seed <n>            ucl: bootstrap seed (default 381, printed on sheets)

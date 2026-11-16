@@ -1,13 +1,15 @@
 using System.Globalization;
 using System.Text;
+using MiniExcelLibs;
 
 namespace OpenUCL.Cli;
 
 /// <summary>
-/// Batch output (output-design.md, decisions #8-13/#72): with `-o &lt;dir&gt;` the
+/// Batch output (output-design.md, decisions #8-13/#72/#75): with `-o &lt;dir&gt;` the
 /// sheet-producing commands write per-series sheets into &lt;dir&gt;/&lt;command&gt;/ and a
-/// summary CSV (run-info header, one row per series) into &lt;dir&gt;. With --bundle
-/// the sheets are appended into one combined file instead of one file per series.
+/// summary CSV plus XLSX (run-info header, one row per series) into &lt;dir&gt;. With
+/// --bundle the sheets are appended into one combined file instead of one file
+/// per series.
 /// </summary>
 internal sealed class BatchRun
 {
@@ -23,6 +25,7 @@ internal sealed class BatchRun
     public string Root { get; }
     public string SheetsDir { get; }
     public string SummaryPath { get; private set; } = "";
+    public string SummaryXlsxPath { get; private set; } = "";
 
     public BatchRun(string root, string command, string inputPath, bool bundle, char csvSep = ',')
     {
@@ -75,7 +78,10 @@ internal sealed class BatchRun
     }
 
     /// <summary>
-    /// Writes the summary CSV (run-info comment header, column header, rows).
+    /// Writes the summary CSV (run-info comment header, column header, rows)
+    /// and the same summary as XLSX (sheet "summary" with the table at A1,
+    /// sheet "run info" with the run details; numeric-looking cells are
+    /// written as numbers so Excel filters and pivots work on them).
     /// </summary>
     public void Flush(string argumentsEcho, int seriesCount)
     {
@@ -91,6 +97,36 @@ internal sealed class BatchRun
         lines.Add(CsvLine(_header));
         foreach (var row in _rows) lines.Add(CsvLine(row));
         File.WriteAllLines(SummaryPath, lines, Encoding.UTF8);
+
+        SummaryXlsxPath = Path.ChangeExtension(SummaryPath, ".xlsx");
+        var runInfo = new List<Dictionary<string, object>>
+        {
+            new() { ["setting"] = "command", ["value"] = _command },
+            new() { ["setting"] = "arguments", ["value"] = argumentsEcho },
+            new() { ["setting"] = "generated", ["value"] = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm 'UTC'", CultureInfo.InvariantCulture) },
+            new() { ["setting"] = "series", ["value"] = seriesCount },
+        };
+        var summary = new List<Dictionary<string, object>>(_rows.Count);
+        foreach (var row in _rows)
+        {
+            var dict = new Dictionary<string, object>();
+            for (int i = 0; i < _header.Length && i < row.Length; i++)
+                dict[_header[i]] = NumericOrText(row[i]);
+            summary.Add(dict);
+        }
+        MiniExcel.SaveAs(SummaryXlsxPath, new Dictionary<string, object>
+        {
+            ["summary"] = summary,
+            ["run info"] = runInfo,
+        });
+    }
+
+    /// <summary>Invariant numeric cell when the text parses as a double, else the text.</summary>
+    private static object NumericOrText(string cell)
+    {
+        if (cell.Length == 0) return string.Empty;
+        return double.TryParse(cell, NumberStyles.Float, CultureInfo.InvariantCulture, out double d)
+            ? d : cell;
     }
 
     private string CsvLine(string[] cells)

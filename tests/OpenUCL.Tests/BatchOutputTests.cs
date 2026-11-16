@@ -107,4 +107,40 @@ public class BatchOutputTests
         }
         finally { Directory.Delete(dir, recursive: true); }
     }
+
+    [Fact]
+    public void Flush_writes_xlsx_with_summary_and_run_info_sheets()
+    {
+        var dir = TempDir();
+        try
+        {
+            var batch = new OpenUCL.Cli.BatchRun(dir, "btv", "wells.csv", bundle: false);
+            batch.SetHeader("point", "parameter", "n", "upl1");
+            batch.AddRow("MW-01", "TCE", "12", "1.5");
+            batch.AddRow("MW-02", "TCE", "9", "not-a-number");
+            batch.Flush("btv wells.csv", 2);
+
+            Assert.True(File.Exists(batch.SummaryXlsxPath));
+            Assert.EndsWith("wells_btv_summary.xlsx", Path.GetFileName(batch.SummaryXlsxPath));
+
+            // summary sheet: header at row 1, numeric cells parsed as numbers
+            var rows = MiniExcelLibs.MiniExcel
+                .Query(batch.SummaryXlsxPath, useHeaderRow: true, sheetName: "summary").ToList();
+            Assert.Equal(2, rows.Count);
+            var row0 = (IDictionary<string, object>)rows[0];
+            Assert.Equal("MW-01", row0["point"]);
+            Assert.Equal(12.0, (double)row0["n"], 10);
+            Assert.Equal(1.5, (double)row0["upl1"], 10);
+            var row1 = (IDictionary<string, object>)rows[1];
+            Assert.Equal("not-a-number", row1["upl1"]);   // non-numeric stays text
+
+            // run info sheet
+            var info = MiniExcelLibs.MiniExcel
+                .Query(batch.SummaryXlsxPath, useHeaderRow: true, sheetName: "run info").ToList();
+            Assert.True(info.Count >= 4);
+            Assert.Equal("command", (string)((IDictionary<string, object>)info[0])["setting"]);
+            Assert.Equal("btv", (string)((IDictionary<string, object>)info[0])["value"]);
+        }
+        finally { Directory.Delete(dir, recursive: true); }
+    }
 }

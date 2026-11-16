@@ -138,7 +138,8 @@ public class CliIntegrationTests
             Assert.Equal(2, Directory.GetFiles(Path.Combine(outDir, "test1")).Length);
             Assert.Single(Directory.GetFiles(Path.Combine(outDir, "anova")));
 
-            // summaries: run-info header + one row per series
+            // summaries: run-info header + one row per series; XLSX alongside
+            Assert.True(File.Exists(Path.Combine(outDir, baseName + "_ucl_summary.xlsx")));
             string uclSummary = File.ReadAllText(Path.Combine(outDir, baseName + "_ucl_summary.csv"));
             Assert.StartsWith("# command: ucl", uclSummary);
             Assert.StartsWith("# series: 2", uclSummary.Split('\n')[3]);
