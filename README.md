@@ -104,6 +104,9 @@ sets and run in full on every machine and in CI):
   (normal, lognormal, gamma WH/HW), nonparametric limits with achieved confidence
 - **Nondetect estimation** — Kaplan-Meier (validated against the Technical Guide's
   Oahu example), robust ROS (LROS/GROS) with Helsel-Cohn plotting positions, DL/2
+- **Batch output** — `-o` folder mode on every analysis module: per-series sheets,
+  summary CSV and Excel (XLSX) with a run-info header; `--bundle` writes one
+  combined file ([walkthrough](docs/format-packed.md#a-complete-batch-example))
 - **Outlier tests** — Dixon (n ≤ 25) and Rosner (n ≥ 25)
 - **One-sample hypothesis tests** — Student's t, exact sign test, exact
   Wilcoxon signed-rank
@@ -143,7 +146,9 @@ version-by-version changelog.
 
 ## Documentation
 
-- [Packed series format](docs/format-packed.md) — one series per row, nondetects as `<DL`
+- [Packed series format](docs/format-packed.md) — one series per row, nondetects as `<DL`,
+  with the complete batch-output walkthrough
+- [Examples](examples/README.md) — ready-made inputs and the exact commands to try them
 - [ProUCL Technical Guide 5.2](https://www.epa.gov/land-research/proucl-software) —
   the methodological reference (public domain); each implementation cites the
   equations it reproduces

@@ -80,3 +80,59 @@ The same commands accept a group-by clause on long-format files to obtain the id
 batch behaviour (`--group-col <group column> --value-col <value column>`). `test2`
 also accepts one long-format file with exactly two `--value-col` columns to compare
 column A against column B directly.
+
+## A complete batch example
+
+The repository ships a ready-made batch input, [`examples/demo-packed.csv`](../examples/demo-packed.csv):
+6 series (3 wells × 2 parameters), one of them with nondetects. Running the BTV module
+in batch mode:
+
+```
+openucl btv examples/demo-packed.csv -o demo-out
+```
+
+produces this layout (stdout stays quiet, one progress line at the end):
+
+```
+demo-out/
+├── btv/
+│   ├── MW-01__PCE.txt            ← full ProUCL-style sheet, one per series
+│   ├── MW-01__TCE.txt
+│   ├── MW-02__PCE.txt
+│   ├── MW-02__TCE.txt
+│   ├── MW-03__PCE.txt
+│   └── MW-03__TCE.txt
+├── demo-packed_btv_summary.csv   ← run-info header + one row per series
+└── demo-packed_btv_summary.xlsx  ← same summary as Excel (2 sheets)
+```
+
+The summary CSV carries the run-info header, the column header and one row per series:
+
+```
+# command: btv
+# arguments: btv examples/demo-packed.csv -o demo-out
+# generated: 2026-11-16 09:45 UTC
+# series: 6
+point,parameter,n,nd,nd_pct,min,max,median,mean,sd,km_mean,km_sd,upl1_normal,utl_normal,usl_normal,utl_nonparam_cc,warnings
+MW-01,TCE,8,1,12.5,0.5,3.3,1.9,1.74286,0.97785,1.5875,0.941326,3.77419,5.06703,3.63806,0.301663,
+MW-02,TCE,7,1,14.29,0.7,2.2,1.25,1.35,0.568331,1.25714,0.531459,2.58697,3.45719,2.38557,0.264908,
+MW-03,TCE,8,0,0,1.7,6.2,3.45,3.7625,1.50422,,,6.78524,8.55689,6.81855,0.33658,
+```
+
+Notes on reading it: `km_mean`/`km_sd` are filled only for series with nondetects
+(MW-03 has none); the trailing `warnings` column counts per-series warnings and shows
+the first message (empty here). The same summary is also written as
+`demo-packed_btv_summary.xlsx`, with the table on a "summary" sheet (numeric cells as
+real numbers, ready for filters and pivots) and the run details on a "run info" sheet.
+Adding `--bundle` replaces the six per-series files with one
+`demo-packed_ucl_bundle.txt` (example with the `ucl` module):
+
+```
+openucl ucl examples/demo-packed.csv -o demo-out --bundle
+demo-out/ucl/demo-packed_ucl_bundle.txt   ← all 6 sheets, in sequence
+```
+
+Regenerating with a different command writes into its own subfolder
+(`demo-out/ucl/`, `demo-out/btv/`, ...), so outputs never overwrite each other.
+`--out`/`--bundle` work the same way for `ucl`, `btv`, `gof`, `ndstats`, `test1`,
+`test2`, `outlier`, `trend` and `anova`.
