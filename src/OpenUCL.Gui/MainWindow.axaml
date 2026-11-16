@@ -1,15 +1,14 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         x:Class="OpenUCL.Gui.MainWindow"
-        Title="OpenUCL 0.1.0" Width="900" Height="600">
-    <Grid RowDefinitions="Auto,*,Auto">
+        Title="OpenUCL" Width="1100" Height="700">
+    <Grid RowDefinitions="Auto,Auto,*,Auto">
         <Menu Grid.Row="0">
             <MenuItem Header="File">
-                <MenuItem Header="Open Single File Sheet..." IsEnabled="False" />
+                <MenuItem Header="Open Data File..." x:Name="MenuOpen" Click="OnOpenClick" />
                 <Separator />
                 <MenuItem Header="Exit" Command="{Binding $parent[Window].Close}" />
             </MenuItem>
-            <MenuItem Header="Stats/Sample Sizes" IsEnabled="False" />
             <MenuItem Header="Graphs" IsEnabled="False" />
             <MenuItem Header="Statistical Tests" IsEnabled="False" />
             <MenuItem Header="Upper Limits/BTVs" IsEnabled="False" />
@@ -19,14 +18,35 @@
             </MenuItem>
         </Menu>
 
-        <Grid Grid.Row="1" ColumnDefinitions="200,*,280">
-            <TextBlock Grid.Column="0" Text="Navigation panel" Margin="8" Opacity="0.5" />
-            <TextBlock Grid.Column="1" Text="Data sheet (coming in Phase 1)" Margin="8" Opacity="0.5" />
-            <TextBlock Grid.Column="2" Text="Log panel" Margin="8" Opacity="0.5" />
+        <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="8,4">
+            <CheckBox x:Name="LongFormatCheck" Content="Open CSV as long format (one observation per row)" VerticalContentAlignment="Center" />
+            <TextBlock Text="  select a series on the left to see its summary sheet" Opacity="0.6" />
+        </StackPanel>
+
+        <Grid Grid.Row="2" ColumnDefinitions="300,*,260">
+            <Grid Grid.Column="0" RowDefinitions="Auto,*,Auto" Margin="8,4">
+                <TextBlock Grid.Row="0" Text="Series" FontWeight="Bold" Margin="0,0,0,4" />
+                <ListBox Grid.Row="1" x:Name="SeriesList" SelectionMode="Single,Toggle"
+                         SelectionChanged="OnSeriesSelected" />
+                <TextBlock Grid.Row="2" x:Name="FileInfoText" Opacity="0.7" TextWrapping="Wrap" Margin="0,6,0,0" />
+            </Grid>
+
+            <Border Grid.Column="1" Margin="4,4" BorderBrush="Gray" BorderThickness="1" CornerRadius="2">
+                <ScrollViewer>
+                    <TextBlock x:Name="SheetPreview" FontFamily="Consolas, 'Courier New', monospace"
+                               FontSize="13" Margin="8,6" TextWrapping="NoWrap"
+                               Text="Open a data file to begin." />
+                </ScrollViewer>
+            </Border>
+
+            <Grid Grid.Column="2" RowDefinitions="Auto,*,Auto" Margin="8,4">
+                <TextBlock Grid.Row="0" Text="Log" FontWeight="Bold" Margin="0,0,0,4" />
+                <ListBox Grid.Row="1" x:Name="LogList" FontSize="12" />
+            </Grid>
         </Grid>
 
-        <TextBlock Grid.Row="2" Margin="8,4"
-                   Text="OpenUCL 0.1.0 — open-source environmental statistics. Not affiliated with or endorsed by the U.S. EPA."
+        <TextBlock Grid.Row="3" Margin="8,4"
+                   Text="OpenUCL — open-source environmental statistics. Not affiliated with or endorsed by the U.S. EPA."
                    Opacity="0.7" />
     </Grid>
 </Window>
