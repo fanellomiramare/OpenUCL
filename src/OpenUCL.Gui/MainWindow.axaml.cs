@@ -130,7 +130,7 @@ public partial class MainWindow : Window
 
     private void CenterTabs_SelectionChanged(object? sender, SelectionChangedEventArgs e)
     {
-        if (_syncing) return;
+        if (_syncing || SeriesList is null || CenterTabs is null) return;
         int i = CenterTabs.SelectedIndex;
         if (i >= 0 && i < _docs.Count && SeriesList.SelectedIndex != i)
             SeriesList.SelectedIndex = i;
@@ -138,7 +138,7 @@ public partial class MainWindow : Window
 
     private void SeriesList_SelectionChanged(object? sender, SelectionChangedEventArgs e)
     {
-        if (_syncing) return;
+        if (_syncing || CenterTabs is null) return;
         int i = SeriesList.SelectedIndex;
         if (i >= 0 && i < _docs.Count && CenterTabs.SelectedIndex != i)
             CenterTabs.SelectedIndex = i;
