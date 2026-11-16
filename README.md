@@ -29,8 +29,9 @@ built automatically by CI for all three operating systems.
 > [!IMPORTANT]
 > **OpenUCL today works through the CLI only.**
 > The GUI download is a graphical shell under development
-> (roadmap Phase 4 — reporting & desktop GUI): it launches,
-> but implements no analysis features yet.
+> (roadmap Phase 4 — reporting & desktop GUI): it opens data files
+> (packed and ProUCL-style long layout), previews them in a data grid
+> and computes outlier sheets — the analysis modules are being added.
 
 | OS | CLI — the working interface (batch) | GUI — shell in development | Notes |
 |---|---|---|---|
@@ -133,14 +134,15 @@ sets and run in full on every machine and in CI):
 | 3 | Outlier tests | Dixon (exact critical values), Rosner | ✅ v0.8 |
 | 3 | Hypothesis tests | one- & two-sample, with nondetects, ANOVA/Kruskal-Wallis, trend | ✅ v0.8–v0.10 |
 | 3 | Historical methods | MVUE, Chebyshev (MVUE), Hall's bootstrap, Land's exact H-UCL | ✅ v0.11–v0.12 |
-| 4 | Batch output & XLSX reports | per-series sheets, summary tables, bundle mode | ⬜ planned |
-| 4 | Desktop GUI | analysis modules for the downloadable shell | ⬜ planned |
+| 4 | Batch output & reports (CLI) | per-series sheets, summary tables (CSV + XLSX), bundle mode, output folders | ✅ v0.15.1–v0.15.3 |
+| 4 | Desktop GUI | document model, file loading, data grid, outlier module | 🔄 started (v0.15.2–v0.15.3) |
 | 5 | Graphs | Q-Q plots, box plots, histograms, time series | ⬜ planned |
 | 6 | Validation campaign → 1.0.0-beta | 28 ProUCL reference data sets, side-by-side comparison | ⬜ planned |
 
-Phases 1–3 — the statistical engine — are complete and shipping.
-The upcoming work is reporting (Phase 4), graphs (Phase 5) and the
-validation campaign that leads to 1.0.0-beta (Phase 6).
+Phases 1–3 — the statistical engine — are complete and shipping, and the
+CLI side of Phase 4 (batch output) is done. The upcoming work is the
+desktop GUI (Phase 4), graphs (Phase 5) and the validation campaign that
+leads to 1.0.0-beta (Phase 6).
 
 Every phase ships runnable CLI executables — see the
 [Releases](https://github.com/fanellomiramare/OpenUCL/releases) page for the
