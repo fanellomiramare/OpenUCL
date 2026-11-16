@@ -371,12 +371,35 @@ internal static class Program
 
     private static int RunNdStats(string[] args)
     {
+        string? outDir = null;
+        bool bundle = false;
+        var rest = new List<string>();
+        for (int i = 0; i < args.Length; i++)
+        {
+            switch (args[i])
+            {
+                case "--out" or "-o" when i + 1 < args.Length:
+                    outDir = args[++i]; break;
+                case "--bundle":
+                    bundle = true; break;
+                default:
+                    rest.Add(args[i]); break;
+            }
+        }
+
         Console.WriteLine($"{"point",-9} {"parameter",-8} {"N",4} {"ND",4} {"%ND",6} {"det.mean",10} {"det.sd",10} {"DL/2 mean",10} {"KM mean",10} {"KM SE",10} {"KM sd",10} {"LROS mean",10} {"LROS sd",10} {"GROS mean",10} {"GROS sd",10}");
         Console.WriteLine(new string('-', 154));
 
+        var spec = InputSpec.Parse(rest.ToArray());
+        BatchRun? batch = outDir is null ? null : new BatchRun(outDir, "ndstats", spec.File, bundle);
+        batch?.SetHeader("point", "parameter", "n", "nd", "nd_pct",
+            "det_mean", "det_sd", "dl2_mean", "km_mean", "km_se", "km_sd",
+            "lros_mean", "lros_sd", "gros_mean", "gros_sd", "warnings");
+
         int series = 0;
-        foreach (var s in InputSpec.Parse(args).ReadSeries())
+        foreach (var s in spec.ReadSeries())
         {
+            var warns = new List<string>();
             string dl2m = "-", km = "-", kmse = "-", kmsd = "-", lm = "-", ls = "-", gm = "-", gs = "-";
             try
             {
@@ -405,7 +428,11 @@ internal static class Program
                         lm = F(st.Mean);
                         ls = F(st.StandardDeviation);
                     }
-                    catch (ArgumentException ex) { Console.Error.WriteLine($"warning: {s.PointId}/{s.Parameter}: LROS: {ex.Message}"); }
+                    catch (ArgumentException ex)
+                    {
+                        warns.Add($"LROS: {ex.Message}");
+                        Console.Error.WriteLine($"warning: {s.PointId}/{s.Parameter}: {warns[^1]}");
+                    }
 
                     try
                     {
@@ -414,9 +441,16 @@ internal static class Program
                         gm = F(st.Mean);
                         gs = F(st.StandardDeviation);
                         if (gros.NegativeImputations)
-                            Console.Error.WriteLine($"warning: {s.PointId}/{s.Parameter}: GROS produced non-positive imputed NDs (documented limitation; prefer KM or LROS).");
+                        {
+                            warns.Add("GROS produced non-positive imputed NDs (documented limitation; prefer KM or LROS)");
+                            Console.Error.WriteLine($"warning: {s.PointId}/{s.Parameter}: {warns[^1]}.");
+                        }
                     }
-                    catch (ArgumentException ex) { Console.Error.WriteLine($"warning: {s.PointId}/{s.Parameter}: GROS: {ex.Message}"); }
+                    catch (ArgumentException ex)
+                    {
+                        warns.Add($"GROS: {ex.Message}");
+                        Console.Error.WriteLine($"warning: {s.PointId}/{s.Parameter}: {warns[^1]}");
+                    }
                 }
             }
 
@@ -426,10 +460,22 @@ internal static class Program
             double pctNd = s.N > 0 ? 100.0 * s.NondetectCount / s.N : 0;
 
             Console.WriteLine($"{Truncate(s.PointId, 9),-9} {Truncate(s.Parameter, 8),-8} {s.N,4} {s.NondetectCount,4} {pctNd,5:G4}% {F(det?.Mean),10} {detSd,10} {dl2m,10} {km,10} {kmse,10} {kmsd,10} {lm,10} {ls,10} {gm,10} {gs,10}");
+            string Cell(string x) => x == "-" ? "" : x;
+            batch?.AddRow(s.PointId, s.Parameter, s.N.ToString(CultureInfo.InvariantCulture),
+                s.NondetectCount.ToString(CultureInfo.InvariantCulture),
+                pctNd.ToString("G4", CultureInfo.InvariantCulture),
+                Cell(F(det?.Mean)), Cell(detSd), Cell(dl2m), Cell(km), Cell(kmse), Cell(kmsd),
+                Cell(lm), Cell(ls), Cell(gm), Cell(gs),
+                warns.Count == 0 ? "" : $"{warns.Count}: {warns[0]}");
             series++;
         }
         Console.WriteLine(new string('-', 154));
         Console.WriteLine($"{series} series. KM = Kaplan-Meier (TG eq. 4-1..4-3); LROS/GROS = robust ROS (TG section 4.5); DL/2 substitution.");
+        if (batch is not null)
+        {
+            batch.Flush($"ndstats {string.Join(" ", args)}", series);
+            Console.WriteLine($"(summary: {batch.SummaryPath})");
+        }
         return 0;
     }
 
@@ -982,6 +1028,8 @@ internal static class Program
     {
         double alpha = 0.05;
         int r0 = Outliers.RosnerMaxOutliers;
+        string? outDir = null;
+        bool bundle = false;
         var rest = new List<string>();
         for (int i = 0; i < args.Length; i++)
         {
@@ -991,15 +1039,25 @@ internal static class Program
                     alpha = double.Parse(args[++i], CultureInfo.InvariantCulture); break;
                 case "--max-outliers" when i + 1 < args.Length:
                     r0 = int.Parse(args[++i], CultureInfo.InvariantCulture); break;
+                case "--out" or "-o" when i + 1 < args.Length:
+                    outDir = args[++i]; break;
+                case "--bundle":
+                    bundle = true; break;
                 default:
                     rest.Add(args[i]); break;
             }
         }
         var spec = InputSpec.Parse(rest.ToArray());
 
+        BatchRun? batch = outDir is null ? null : new BatchRun(outDir, "outlier", spec.File, bundle);
+        batch?.SetHeader("point", "parameter", "n_detects",
+            "dixon_low_statistic", "dixon_low_outlier", "dixon_high_statistic", "dixon_high_outlier",
+            "rosner_outliers_5pct", "rosner_outliers_1pct", "rosner_first_outlier", "warnings");
+
         int series = 0;
         foreach (var s in spec.ReadSeries())
         {
+            var warns = new List<string>();
             double[] detected = s.DetectedValues();
             var sheet = new ReportSheet($"OpenUCL {Version} — OUTLIER TESTS (alpha = {alpha:G2})");
             sheet.Header.Add(("series", $"{s.PointId} / {s.Parameter}    n (detects) = {detected.Length}    ND = {s.NondetectCount}"));
@@ -1008,6 +1066,7 @@ internal static class Program
                 .AddNote("outlier tests are exploratory: confirm flagged values with site knowledge before exclusion (TG section 7.2).")
                 .AddNote("both tests assume normality of the data without the suspected outliers.");
 
+            string dLow = "", dLowOut = "", dHigh = "", dHighOut = "";
             if (detected.Length is >= 3 and <= 25)
             {
                 var d = Outliers.Dixon(detected);
@@ -1029,8 +1088,23 @@ internal static class Program
                         _ => "no",
                     });
                 sec.AddNote("exact critical values computed by numerical integration of the order-statistic ratio distribution.");
+                dLow = F(d.LowStatistic);
+                dLowOut = (d.LowOutlier1, d.LowOutlier5, d.LowOutlier10) switch
+                {
+                    (_, _, true) or (_, true, _) or (true, _, _) => "yes",
+                    _ => "no",
+                };
+                dHigh = F(d.HighStatistic);
+                dHighOut = (d.HighOutlier1, d.HighOutlier5, d.HighOutlier10) switch
+                {
+                    (true, _, _) => "yes (1%)",
+                    (_, true, _) => "yes (5%)",
+                    (_, _, true) => "yes (10%)",
+                    _ => "no",
+                };
             }
 
+            string out5S = "", out1S = "", firstOutlier = "";
             if (detected.Length >= 25)
             {
                 try
@@ -1045,17 +1119,30 @@ internal static class Program
                             F(st.Value), F(st.R), F(st.Critical5), F(st.Critical1));
                     sec.AddNote($"at 5%: {out5} potential outliers; at 1%: {out1} potential outliers " +
                                 "(critical values: generalized ESD formulation, within ~3% of the Rosner tables).");
+                    out5S = out5.ToString(CultureInfo.InvariantCulture);
+                    out1S = out1.ToString(CultureInfo.InvariantCulture);
+                    firstOutlier = out5 > 0 ? F(ros.Steps[0].Value) : "";
                 }
-                catch (ArgumentException ex)
-                {
-                    Console.Error.WriteLine($"warning: {s.PointId}/{s.Parameter}: Rosner: {ex.Message}");
-                }
+                catch (ArgumentException ex) { warns.Add($"Rosner: {ex.Message}"); }
             }
 
-            Console.Write(sheet.RenderText());
+            if (batch is null) Console.Write(sheet.RenderText());
+            else batch.WriteSheet(s.PointId, s.Parameter, sheet.RenderText());
+
+            batch?.AddRow(s.PointId, s.Parameter, detected.Length.ToString(CultureInfo.InvariantCulture),
+                dLow, dLowOut, dHigh, dHighOut, out5S, out1S, firstOutlier,
+                warns.Count == 0 ? "" : $"{warns.Count}: {warns[0]}");
             series++;
         }
-        Console.WriteLine($"({series} series processed.)");
+        if (batch is null)
+        {
+            Console.WriteLine($"({series} series processed.)");
+        }
+        else
+        {
+            batch.Flush($"outlier {string.Join(" ", args)}", series);
+            Console.WriteLine($"({series} series processed; sheets: {batch.SheetsDir}; summary: {batch.SummaryPath})");
+        }
         return 0;
     }
 
@@ -1063,6 +1150,8 @@ internal static class Program
     {
         double cs = double.NaN, alpha = 0.05;
         bool lowerTail = false;
+        string? outDir = null;
+        bool bundle = false;
         var rest = new List<string>();
         for (int i = 0; i < args.Length; i++)
         {
@@ -1074,6 +1163,10 @@ internal static class Program
                     alpha = double.Parse(args[++i], CultureInfo.InvariantCulture); break;
                 case "--lower":
                     lowerTail = true; break;
+                case "--out" or "-o" when i + 1 < args.Length:
+                    outDir = args[++i]; break;
+                case "--bundle":
+                    bundle = true; break;
                 default:
                     rest.Add(args[i]); break;
             }
@@ -1081,40 +1174,65 @@ internal static class Program
         if (double.IsNaN(cs)) throw new FormatException("--cs <value> (comparison value) is required");
         var spec = InputSpec.Parse(rest.ToArray());
 
+        BatchRun? batch = outDir is null ? null : new BatchRun(outDir, "test1", spec.File, bundle);
+        batch?.SetHeader("point", "parameter", "n", "nd", "cs",
+            "t_statistic", "t_p_one_sided", "t_reject",
+            "sign_statistic", "sign_p_one_sided", "sign_reject",
+            "wilcoxon_statistic", "wilcoxon_p_one_sided", "wilcoxon_reject", "warnings");
+
         int series = 0;
         foreach (var s in spec.ReadSeries())
         {
+            var warns = new List<string>();
             double[] detected = s.DetectedValues();
             var sheet = new ReportSheet($"OpenUCL {Version} — ONE-SAMPLE HYPOTHESIS TESTS (alpha = {alpha:G2}, Cs = {cs.ToString("G6", CultureInfo.InvariantCulture)})");
             sheet.Header.Add(("series", $"{s.PointId} / {s.Parameter}    n (detects) = {detected.Length}    ND = {s.NondetectCount}"));
             sheet.Header.Add(("generated", DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm 'UTC'", CultureInfo.InvariantCulture)));
 
+            string tS = "", tP = "", tR = "", sgS = "", sgP = "", sgR = "", wS = "", wP = "", wR = "";
             var sec = sheet.AddSection("one-sample tests");
             sec.ColumnsAre("test", "form", "statistic", "p (one-sided)", "reject H0");
             try
             {
                 var t = OneSampleTests.TTest(detected, cs, !lowerTail, alpha);
                 sec.AddRow("Student's t", t.TestForm, F(t.Statistic), F(t.PValueOneSided), t.RejectNull ? "yes" : "no");
+                tS = F(t.Statistic); tP = F(t.PValueOneSided); tR = t.RejectNull ? "yes" : "no";
             }
-            catch (ArgumentException ex) { sec.AddRow("Student's t", "-", "-", "-", $"n/a: {ex.Message}"); }
+            catch (ArgumentException ex) { sec.AddRow("Student's t", "-", "-", "-", $"n/a: {ex.Message}"); warns.Add($"t: {ex.Message}"); }
             try
             {
                 var sg = OneSampleTests.SignTest(detected, cs, !lowerTail, alpha);
                 sec.AddRow("sign (exact binomial)", sg.TestForm, sg.Statistic.ToString(CultureInfo.InvariantCulture), F(sg.PValueOneSided), sg.RejectNull ? "yes" : "no");
+                sgS = sg.Statistic.ToString(CultureInfo.InvariantCulture); sgP = F(sg.PValueOneSided); sgR = sg.RejectNull ? "yes" : "no";
             }
-            catch (ArgumentException ex) { sec.AddRow("sign (exact binomial)", "-", "-", "-", $"n/a: {ex.Message}"); }
+            catch (ArgumentException ex) { sec.AddRow("sign (exact binomial)", "-", "-", "-", $"n/a: {ex.Message}"); warns.Add($"sign: {ex.Message}"); }
             try
             {
                 var w = OneSampleTests.WilcoxonSignedRank(detected, cs, !lowerTail, alpha);
                 sec.AddRow("Wilcoxon signed-rank (exact)", w.TestForm, F(w.Statistic), F(w.PValueOneSided), w.RejectNull ? "yes" : "no");
+                wS = F(w.Statistic); wP = F(w.PValueOneSided); wR = w.RejectNull ? "yes" : "no";
             }
-            catch (ArgumentException ex) { sec.AddRow("Wilcoxon signed-rank (exact)", "-", "-", "-", $"n/a: {ex.Message}"); }
+            catch (ArgumentException ex) { sec.AddRow("Wilcoxon signed-rank (exact)", "-", "-", "-", $"n/a: {ex.Message}"); warns.Add($"wilcoxon: {ex.Message}"); }
             sec.AddNote($"form 1: HA mean < Cs; form 2: HA mean > Cs. Selected: {(lowerTail ? "form 1" : "form 2")}.");
 
-            Console.Write(sheet.RenderText());
+            if (batch is null) Console.Write(sheet.RenderText());
+            else batch.WriteSheet(s.PointId, s.Parameter, sheet.RenderText());
+
+            batch?.AddRow(s.PointId, s.Parameter, detected.Length.ToString(CultureInfo.InvariantCulture),
+                s.NondetectCount.ToString(CultureInfo.InvariantCulture), cs.ToString("G6", CultureInfo.InvariantCulture),
+                tS, tP, tR, sgS, sgP, sgR, wS, wP, wR,
+                warns.Count == 0 ? "" : $"{warns.Count}: {warns[0]}");
             series++;
         }
-        Console.WriteLine($"({series} series processed.)");
+        if (batch is null)
+        {
+            Console.WriteLine($"({series} series processed.)");
+        }
+        else
+        {
+            batch.Flush($"test1 {string.Join(" ", args)}", series);
+            Console.WriteLine($"({series} series processed; sheets: {batch.SheetsDir}; summary: {batch.SummaryPath})");
+        }
         return 0;
     }
 
@@ -1123,6 +1241,8 @@ internal static class Program
         double alpha = 0.05;
         string? groupA = null, groupB = null;
         bool lowerTail = false;
+        string? outDir = null;
+        bool bundle = false;
         var rest = new List<string>();
         var inputOptionArgs = new List<string>();
         for (int i = 0; i < args.Length; i++)
@@ -1137,6 +1257,10 @@ internal static class Program
                     groupB = args[++i]; break;
                 case "--lower":
                     lowerTail = true; break;
+                case "--out" or "-o" when i + 1 < args.Length:
+                    outDir = args[++i]; break;
+                case "--bundle":
+                    bundle = true; break;
                 // input options: keep option+value pair for InputSpec.Parse (consume the value)
                 case "--col-sep" or "--value-sep" or "--value-col" or "--group-col"
                      or "--nd-flag-col" or "--nd-flag-value" or "--dl-col" when i + 1 < args.Length:
@@ -1151,6 +1275,13 @@ internal static class Program
         if (files.Count > 1 && (groupA is not null || groupB is not null))
             throw new FormatException("provide either one file with --group-col/--group-a/--group-b, or two files without them");
         var optionArgs = rest.Where(a => a.StartsWith("--")).Concat(inputOptionArgs).ToArray();
+        BatchRun? batch = outDir is null ? null : new BatchRun(outDir, "test2", files[0], bundle);
+        batch?.SetHeader("comparison", "n1", "n2",
+            "t_statistic", "t_df", "t_p_one_sided", "t_reject",
+            "satterthwaite_df", "satterthwaite_p_one_sided",
+            "wmw_z", "wmw_p_one_sided",
+            "gehan_z", "gehan_p_one_sided", "tarone_ware_z", "tarone_ware_p_one_sided",
+            "f_statistic", "f_p_two_sided", "warnings");
 
         List<ValueObservation> obsA, obsB;
         string description;
@@ -1246,24 +1377,43 @@ internal static class Program
         sec.AddRow("Satterthwaite t", ts.TestForm, F(ts.Statistic), F(ts.DegreesOfFreedom), F(ts.PValueOneSided), ts.RejectNull ? "yes" : "no");
         var w = TwoSampleTests.Wmw(sampleA, sampleB, !lowerTail, alpha);
         sec.AddRow("Wilcoxon-Mann-Whitney", w.TestForm, F(w.Statistic), "normal approx.", F(w.PValueOneSided), w.RejectNull ? "yes" : "no");
+        double? gehanZ = null, gehanP = null, twZ = null, twP = null;
         if (obsA.Count(o => o.IsNondetect) > 0 || obsB.Count(o => o.IsNondetect) > 0)
         {
             var ge = CensoredTwoSample.Gehan(obsA, obsB, !lowerTail, alpha);
             sec.AddRow("Gehan (with NDs)", ge.TestForm, F(ge.Statistic), "normal approx.", F(ge.PValueOneSided), ge.RejectNull ? "yes" : "no");
+            gehanZ = ge.Statistic; gehanP = ge.PValueOneSided;
             var tw = CensoredTwoSample.TaroneWare(obsA, obsB, !lowerTail, alpha);
             sec.AddRow("Tarone-Ware (with NDs)", tw.TestForm, F(tw.Statistic), "normal approx.", F(tw.PValueOneSided), tw.RejectNull ? "yes" : "no");
+            twZ = tw.Statistic; twP = tw.PValueOneSided;
             sec.AddNote("Gehan and Tarone-Ware include the nondetects at their detection limits (TG sections 6.9.2-6.9.3); the normal approximation is unreliable below 10 observations per sample.");
         }
+        string fCell = "", fPCell = "";
         try
         {
             var (f, p2, rej, df1, df2) = TwoSampleTests.FTest(sampleA, sampleB, alpha);
             sec.AddRow("F test (variances)", $"HA: variances differ", F(f), $"{df1},{df2}", F(p2), rej ? "yes" : "no");
+            fCell = F(f); fPCell = F(p2);
         }
         catch (ArgumentException ex) { sec.AddRow("F test (variances)", "-", "-", "-", $"n/a: {ex.Message}"); }
         sec.AddNote($"form 1: HA sample1 < sample2; form 2: HA sample1 > sample2. Selected: {(lowerTail ? "form 1" : "form 2")}. " +
                     "WMW uses the normal approximation with continuity and tie corrections.");
 
-        Console.Write(sheet.RenderText());
+        if (batch is null) Console.Write(sheet.RenderText());
+        else batch.WriteSheet("sample1_vs_sample2", "tests", sheet.RenderText());
+
+        batch?.AddRow(description, sampleA.Length.ToString(CultureInfo.InvariantCulture),
+            sampleB.Length.ToString(CultureInfo.InvariantCulture),
+            BatchRun.Num(te.Statistic), F(te.DegreesOfFreedom), BatchRun.Num(te.PValueOneSided), te.RejectNull ? "yes" : "no",
+            F(ts.DegreesOfFreedom), BatchRun.Num(ts.PValueOneSided),
+            BatchRun.Num(w.Statistic), BatchRun.Num(w.PValueOneSided),
+            BatchRun.Num(gehanZ), BatchRun.Num(gehanP), BatchRun.Num(twZ), BatchRun.Num(twP),
+            fCell, fPCell, "");
+        if (batch is not null)
+        {
+            batch.Flush($"test2 {string.Join(" ", args)}", 1);
+            Console.WriteLine($"(1 comparison processed; sheet: {batch.SheetsDir}; summary: {batch.SummaryPath})");
+        }
         return 0;
     }
 
@@ -1283,6 +1433,8 @@ internal static class Program
     {
         double alpha = 0.05;
         string? groupCol = null, valueCol = null;
+        string? outDir = null;
+        bool bundle = false;
         var rest = new List<string>();
         for (int i = 0; i < args.Length; i++)
         {
@@ -1294,6 +1446,10 @@ internal static class Program
                     groupCol = args[++i]; break;
                 case "--value-col" when i + 1 < args.Length:
                     valueCol = args[++i]; break;
+                case "--out" or "-o" when i + 1 < args.Length:
+                    outDir = args[++i]; break;
+                case "--bundle":
+                    bundle = true; break;
                 default:
                     rest.Add(args[i]); break;
             }
@@ -1360,19 +1516,59 @@ internal static class Program
         kw.AddRow("H", F(a.KwH), F(a.DfBetween), F(a.KwPValue), "yes");
         kw.AddNote($"H0: all group locations are equal; {(a.KwRejectNull ? $"REJECTED at {alpha:G2}" : $"not rejected at {alpha:G2}")}.");
 
-        Console.Write(sheet.RenderText());
+        BatchRun? batch = outDir is null ? null : new BatchRun(outDir, "anova", spec.File, bundle);
+        if (batch is null)
+        {
+            Console.Write(sheet.RenderText());
+        }
+        else
+        {
+            batch.SetHeader("groups", "n_observations", "f", "p_anova", "anova_reject",
+                "kw_h", "kw_p", "kw_reject", "warnings");
+            batch.WriteSheet(Path.GetFileNameWithoutExtension(spec.File), "anova", sheet.RenderText());
+            batch.AddRow(groupsData.Count.ToString(CultureInfo.InvariantCulture),
+                a.N.ToString(CultureInfo.InvariantCulture),
+                BatchRun.Num(a.F), BatchRun.Num(a.PValue), a.RejectNull ? "yes" : "no",
+                BatchRun.Num(a.KwH), BatchRun.Num(a.KwPValue), a.KwRejectNull ? "yes" : "no", "");
+            batch.Flush($"anova {string.Join(" ", args)}", 1);
+            Console.WriteLine($"(sheet: {batch.SheetsDir}; summary: {batch.SummaryPath})");
+        }
         return 0;
     }
 
     private static int RunTrend(string[] args)
     {
-        var spec = InputSpec.Parse(args);
+        string? outDir = null;
+        bool bundle = false;
+        var rest = new List<string>();
+        for (int i = 0; i < args.Length; i++)
+        {
+            switch (args[i])
+            {
+                case "--out" or "-o" when i + 1 < args.Length:
+                    outDir = args[++i]; break;
+                case "--bundle":
+                    bundle = true; break;
+                default:
+                    rest.Add(args[i]); break;
+            }
+        }
+
+        var spec = InputSpec.Parse(rest.ToArray());
+        BatchRun? batch = outDir is null ? null : new BatchRun(outDir, "trend", spec.File, bundle);
+        batch?.SetHeader("point", "parameter", "n", "mk_s", "mk_z", "mk_p_two_sided", "trend",
+            "theil_sen_slope", "ols_slope", "ols_intercept", "ols_r2", "warnings");
+
         int series = 0;
         foreach (var s in spec.ReadSeries())
         {
+            var warns = new List<string>();
             if (s.N < 4)
             {
-                Console.Error.WriteLine($"warning: {s.PointId}/{s.Parameter}: fewer than 4 observations, trend skipped.");
+                warns.Add("fewer than 4 observations, trend skipped");
+                Console.Error.WriteLine($"warning: {s.PointId}/{s.Parameter}: {warns[0]}.");
+                batch?.AddRow(s.PointId, s.Parameter, s.N.ToString(CultureInfo.InvariantCulture),
+                    "", "", "", "", "", "", "", "", $"{warns.Count}: {warns[0]}");
                 continue;
             }
             double[] values = s.Observations.Select(o => o.Value).ToArray();
@@ -1396,10 +1592,24 @@ internal static class Program
             slopes.AddRow("OLS slope", F(t.OlsSlope), $"intercept {F(t.OlsIntercept)}");
             slopes.AddRow("OLS R-squared", F(t.OlsR2), $"slope p (two-sided) = {F(t.OlsSlopePValue)}");
 
-            Console.Write(sheet.RenderText());
+            if (batch is null) Console.Write(sheet.RenderText());
+            else batch.WriteSheet(s.PointId, s.Parameter, sheet.RenderText());
+
+            batch?.AddRow(s.PointId, s.Parameter, s.N.ToString(CultureInfo.InvariantCulture),
+                BatchRun.Num(t.MkS), BatchRun.Num(t.MkZ), BatchRun.Num(t.MkPValueTwoSided), t.MkTrend,
+                BatchRun.Num(t.TheilSenSlope), BatchRun.Num(t.OlsSlope), BatchRun.Num(t.OlsIntercept),
+                BatchRun.Num(t.OlsR2), "");
             series++;
         }
-        Console.WriteLine($"({series} series processed.)");
+        if (batch is null)
+        {
+            Console.WriteLine($"({series} series processed.)");
+        }
+        else
+        {
+            batch.Flush($"trend {string.Join(" ", args)}", series);
+            Console.WriteLine($"({series} series processed; sheets: {batch.SheetsDir}; summary: {batch.SummaryPath})");
+        }
         return 0;
     }
 
@@ -1448,9 +1658,10 @@ internal static class Program
               --nd-flag-value <s>   long format: flag value marking nondetects (default ND)
               --dl-col <name>       long format: detection limit column (default: value column holds DL)
               --alpha <x>           gof/ucl: significance level (default 0.05)
-              --out <dir>, -o <dir> ucl/btv/gof batch mode: per-series sheets in
-                                    <dir>/<command>/ + summary CSV (<input>_<command>_summary.csv
-                                    with run-info header; one row per series)
+              --out <dir>, -o <dir> batch mode for ucl/btv/gof/ndstats/test1/test2/outlier/
+                                    trend/anova: per-series sheets in <dir>/<command>/ +
+                                    summary CSV (<input>_<command>_summary.csv with
+                                    run-info header; one row per series or comparison)
               --bundle              with --out: one combined sheet file instead of per-series files
               --boot <n>            ucl: bootstrap runs (default 2000)
               --seed <n>            ucl: bootstrap seed (default 381, printed on sheets)

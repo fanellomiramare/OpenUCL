@@ -97,7 +97,7 @@ public class CliIntegrationTests
     }
 
     [Fact]
-    public void Cli_batch_out_writes_sheets_and_summary_for_ucl_btv_gof()
+    public void Cli_batch_out_writes_sheets_and_summary_for_all_sheet_commands()
     {
         string? exe = FindCli();
         if (exe is null) return;   // CLI not built — skip (run dotnet build -c Release)
@@ -107,34 +107,51 @@ public class CliIntegrationTests
             "point;parameter;values\n" +
             "MW-01;TCE;\"1.2;0.8;<0.5;2.1;3.3\"\n" +
             "MW-02;TCE;\"4;5;6;7\"\n");
+        var longInput = Path.Combine(Path.GetTempPath(), $"openucl-batch-it-{Guid.NewGuid():N}.csv");
+        File.WriteAllText(longInput, "Group;Value\nA;1\nA;2\nA;3\nB;5\nB;6\nB;7\n");
         var outDir = Path.Combine(Path.GetTempPath(), $"openucl-batch-it-{Guid.NewGuid():N}");
 
         try
         {
-            foreach (var cmd in new[] { "ucl", "btv", "gof" })
+            var baseName = Path.GetFileNameWithoutExtension(input);
+            var longBaseName = Path.GetFileNameWithoutExtension(longInput);
+            foreach (var (cmd, cmdArgs, summaryName) in new[] {
+                ("ucl", $"\"{input}\"", baseName),
+                ("btv", $"\"{input}\"", baseName),
+                ("gof", $"\"{input}\"", baseName),
+                ("ndstats", $"\"{input}\"", baseName),
+                ("test1", $"\"{input}\" --cs 4", baseName),
+                ("outlier", $"\"{input}\"", baseName),
+                ("trend", $"\"{input}\"", baseName),
+                ("anova", $"\"{longInput}\" --long --group-col Group --value-col Value", longBaseName),
+            })
             {
-                var (code, output) = Run(exe, $"{cmd} \"{input}\" --out \"{outDir}\"");
+                var (code, output) = Run(exe, $"{cmd} {cmdArgs} --out \"{outDir}\"");
                 Assert.Equal(0, code);
-                Assert.Contains("summary:", output);
+                Assert.True(File.Exists(Path.Combine(outDir, summaryName + $"_{cmd}_summary.csv")),
+                    $"missing summary for {cmd}");
             }
 
-            // per-series sheets in per-command subfolders
+            // per-series sheets in per-command subfolders (ucl/btv have 2 series each)
             Assert.Equal(2, Directory.GetFiles(Path.Combine(outDir, "ucl")).Length);
             Assert.Equal(2, Directory.GetFiles(Path.Combine(outDir, "btv")).Length);
+            Assert.Equal(2, Directory.GetFiles(Path.Combine(outDir, "test1")).Length);
+            Assert.Single(Directory.GetFiles(Path.Combine(outDir, "anova")));
 
             // summaries: run-info header + one row per series
-            string baseName = Path.GetFileNameWithoutExtension(input);
             string uclSummary = File.ReadAllText(Path.Combine(outDir, baseName + "_ucl_summary.csv"));
             Assert.StartsWith("# command: ucl", uclSummary);
             Assert.StartsWith("# series: 2", uclSummary.Split('\n')[3]);
             Assert.Contains("MW-01", uclSummary);
             Assert.Contains("recommended_method", uclSummary);
-
-            Assert.True(File.Exists(Path.Combine(outDir, baseName + "_gof_summary.csv")));
+            string anovaSummary = File.ReadAllText(Path.Combine(outDir, Path.GetFileNameWithoutExtension(longInput) + "_anova_summary.csv"));
+            Assert.StartsWith("# command: anova", anovaSummary);
+            Assert.Contains("kw_h", anovaSummary);
         }
         finally
         {
             File.Delete(input);
+            File.Delete(longInput);
             if (Directory.Exists(outDir)) Directory.Delete(outDir, recursive: true);
         }
     }

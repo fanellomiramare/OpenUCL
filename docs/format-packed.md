@@ -57,12 +57,13 @@ Any OpenUCL command applied to a packed file processes **every series** and prin
 per-series results to stdout (`summary` prints one row per series; `ucl`/`btv`/`test1`
 print the full ProUCL-style output sheet for each series).
 
-For `ucl`, `btv` and `gof`, `--out <dir>` (short form `-o <dir>`) switches to **batch
-output**: per-series sheets are written into `<dir>/<command>/` (sanitized
-`point__parameter.txt` names, automatic `(2)`, `(3)`... disambiguation) plus a summary
-CSV `<input>_<command>_summary.csv` in `<dir>` with a run-info comment header
-(command, arguments, UTC timestamp, series count) and one row per series (common
-statistics columns plus the command-specific block, and a trailing `warnings`
+For `ucl`, `btv`, `gof`, `ndstats`, `test1`, `test2`, `outlier`, `trend` and `anova`,
+`--out <dir>` (short form `-o <dir>`) switches to **batch output**: per-series sheets
+are written into `<dir>/<command>/` (sanitized `point__parameter.txt` names, automatic
+`(2)`, `(3)`... disambiguation; `anova` writes a single file-level sheet) plus a
+summary CSV `<input>_<command>_summary.csv` in `<dir>` with a run-info comment header
+(command, arguments, UTC timestamp, series count) and one row per series or comparison
+(common statistics columns plus the command-specific block, and a trailing `warnings`
 column). With `--bundle` the sheets are appended into one combined
 `<input>_<command>_bundle.txt` file instead of one file per series. Without `--out`
 the per-series sheets keep going to stdout.
