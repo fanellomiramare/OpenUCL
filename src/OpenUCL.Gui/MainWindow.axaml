@@ -32,11 +32,20 @@
             </Grid>
 
             <Border Grid.Column="1" Margin="4,4" BorderBrush="Gray" BorderThickness="1" CornerRadius="2">
-                <ScrollViewer>
-                    <TextBlock x:Name="SheetPreview" FontFamily="Consolas, 'Courier New', monospace"
-                               FontSize="13" Margin="8,6" TextWrapping="NoWrap"
-                               Text="Open a data file to begin." />
-                </ScrollViewer>
+                <TabControl x:Name="CenterTabs">
+                    <TabItem Header="Data">
+                        <DataGrid x:Name="DataGrid" AutoGenerateColumns="True" IsReadOnly="True"
+                                  CanUserSortColumns="True" GridLinesVisibility="Horizontal"
+                                  BorderThickness="0" />
+                    </TabItem>
+                    <TabItem Header="Sheet">
+                        <ScrollViewer>
+                            <TextBlock x:Name="SheetPreview" FontFamily="Consolas, 'Courier New', monospace"
+                                       FontSize="13" Margin="8,6" TextWrapping="NoWrap"
+                                       Text="Select a series to see its summary sheet." />
+                        </ScrollViewer>
+                    </TabItem>
+                </TabControl>
             </Border>
 
             <Grid Grid.Column="2" RowDefinitions="Auto,*,Auto" Margin="8,4">

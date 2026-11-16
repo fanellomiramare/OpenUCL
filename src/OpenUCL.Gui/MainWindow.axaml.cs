@@ -1,3 +1,4 @@
+using System.Data;
 using System.Globalization;
 using System.Reflection;
 using Avalonia.Controls;
@@ -10,10 +11,10 @@ namespace OpenUCL.Gui;
 
 public partial class MainWindow : Window
 {
-    private static readonly string Version =
+    private static readonly string Version = (
         System.Reflection.Assembly.GetEntryAssembly()?
-            .GetCustomAttribute<System.Reflection.AssemblyInformationalVersionAttribute>()?
-            .InformationalVersion.Split('+')[0] ?? "0.0.0-dev";
+            .GetCustomAttribute<System.Reflection.AssemblyInformationalVersionAttribute>()
+            ?.InformationalVersion ?? "0.0.0-dev").Split('+')[0];
 
     private List<SeriesRecord> _series = new();
     private string _filePath = "";
@@ -21,6 +22,16 @@ public partial class MainWindow : Window
     public MainWindow() => InitializeComponent();
 
     private void Log(string message) => LogList.Items.Add($"[{DateTime.UtcNow:HH:mm:ss}] {message}");
+
+    private void ShowTab(string header)
+    {
+        foreach (var item in CenterTabs.Items)
+            if (item is TabItem tab && tab.Header as string == header)
+            {
+                CenterTabs.SelectedItem = tab;
+                break;
+            }
+    }
 
     private async void OnOpenClick(object? sender, RoutedEventArgs e)
     {
@@ -49,6 +60,8 @@ public partial class MainWindow : Window
         {
             bool isSpreadsheet = Path.GetExtension(path).ToLowerInvariant() is ".xlsx" or ".xlsm" or ".xls";
             bool asLong = isSpreadsheet || LongFormatCheck.IsChecked == true;
+            var data = new DataTable("data");
+
             if (asLong)
             {
                 var options = new LongTableReadOptions { ColumnSeparator = ';' };
@@ -58,14 +71,42 @@ public partial class MainWindow : Window
                     .Where(c => !excluded.Contains(c) && IsNumericColumn(table, c)).ToList();
                 _series = LongTableReader.ToSeries(table,
                     new SeriesSelection { ValueColumns = valueColumns }, options).ToList();
+
+                // data grid = the loaded table, column by column
+                foreach (string col in table.Columns) data.Columns.Add(col, typeof(string));
+                for (int r = 0; r < table.RowCount; r++)
+                {
+                    var cells = new string[table.Columns.Count];
+                    for (int c = 0; c < table.Columns.Count; c++)
+                    {
+                        var d = table.GetDouble(r, c);
+                        cells[c] = d is not null
+                            ? d.Value.ToString("G6", CultureInfo.InvariantCulture)
+                            : table.GetString(r, c);
+                    }
+                    data.Rows.Add(cells);
+                }
                 FileInfoText.Text = $"{Path.GetFileName(path)} (long layout) — " +
                                     $"{table.RowCount} rows, {valueColumns.Count} value column(s)";
             }
             else
             {
                 _series = PackedSeriesReader.ReadFile(path).ToList();
+
+                // data grid = observation-level long form derived from the packed file
+                data.Columns.Add("Point", typeof(string));
+                data.Columns.Add("Parameter", typeof(string));
+                data.Columns.Add("Value", typeof(string));
+                foreach (var s in _series)
+                    foreach (var o in s.Observations)
+                        data.Rows.Add(s.PointId, s.Parameter,
+                            o.IsNondetect ? "<" + o.Value.ToString("G6", CultureInfo.InvariantCulture)
+                                          : o.Value.ToString("G6", CultureInfo.InvariantCulture));
                 FileInfoText.Text = $"{Path.GetFileName(path)} (packed layout) — {_series.Count} series";
             }
+
+            DataGrid.ItemsSource = data.DefaultView;
+            ShowTab("Data");
 
             SeriesList.Items.Clear();
             foreach (var s in _series)
@@ -75,6 +116,7 @@ public partial class MainWindow : Window
         catch (Exception ex)
         {
             SheetPreview.Text = "";
+            DataGrid.ItemsSource = null;
             Log($"ERROR loading {Path.GetFileName(path)}: {ex.Message}");
         }
     }
@@ -83,6 +125,7 @@ public partial class MainWindow : Window
     {
         int index = SeriesList.SelectedIndex;
         if (index < 0 || index >= _series.Count) return;
+        ShowTab("Sheet");
         try
         {
             SheetPreview.Text = BuildSeriesSheet(_series[index]).RenderText();

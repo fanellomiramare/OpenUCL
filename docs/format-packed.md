@@ -25,6 +25,11 @@ size is effectively bounded only by disk space (and each single series must fit 
   The separator is always configurable and auto-detected when possible.
 - **Nondetects** are written with a leading `<` followed by the detection/reporting limit:
   `<0.68`. This is equivalent to ProUCL's separate "ND flag" + "detection limit" columns.
+  Note on the flag column: ProUCL auto-treats any column whose name starts with `d_`/`D_`
+  as a nondetect flag column. OpenUCL does **not** auto-detect those columns (a parameter
+  may legitimately start with "D"): the ND flag column, when present, must be designated
+  explicitly (`--nd-flag-col` on the command line, or the ND flag column selection in the
+  graphical interface).
 - **Missing values**: empty slots (`;;`), `NA`, or `NaN` are skipped and reported in the
   output: the per-series rows expose the columns `N` (observations kept) and `ND`
   (nondetects), and the footer reads "nondetects included in N; stats on detected
