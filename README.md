@@ -3,8 +3,9 @@
 # OpenUCL
 
 **Open-source, cross-platform environmental statistics** — a clean-room reimplementation
-of the methods made popular by the U.S. EPA **ProUCL 5.2** software, designed for
-**large "packed" data sets**, batch processing and full automation.
+of the statistical methods made popular by the U.S. EPA **ProUCL 5.2** software (desktop
+interface modeled on the ProUCL workflow), designed for **large "packed" data sets**,
+batch processing and full automation.
 
 [![CI](https://github.com/fanellomiramare/OpenUCL/actions/workflows/ci.yml/badge.svg)](https://github.com/fanellomiramare/OpenUCL/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/fanellomiramare/OpenUCL)](https://github.com/fanellomiramare/OpenUCL/releases/latest)
@@ -168,8 +169,10 @@ dotnet test
 ## Contributing
 
 Contributions are welcome! Please read [CONTRIBUTING.md](CONTRIBUTING.md) first —
-in particular the **clean-room policy**: OpenUCL must never contain code derived
-from the ProUCL binaries. The people and agents behind the project are listed in
+in particular the **contribution policy**: OpenUCL's statistical code must never be
+derived from the ProUCL binaries; the UI workflow is modeled on the ProUCL application
+by black-box observation only (ProUCL embeds licensed third-party components, so its
+binaries are never decompiled or disassembled). The people and agents behind the project are listed in
 [CONTRIBUTORS.md](CONTRIBUTORS.md).
 
 ## License and disclaimer

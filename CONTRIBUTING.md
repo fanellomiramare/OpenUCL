@@ -3,22 +3,27 @@
 Thank you for considering a contribution! A few rules keep this project legally clean
 and scientifically trustworthy.
 
-## Clean-room policy (important)
+## Contribution policy (important)
 
 The ProUCL software ("ProUCL 5.2") is distributed with this notice:
 
 > "ProUCL contains embedded licensed software. Any modification of the ProUCL source code
 > may violate the embedded licensed software agreements and is expressly forbidden."
 
+ProUCL also embeds licensed third-party components (charting and spreadsheet libraries).
 Therefore, in this repository:
 
-- **Never decompile, disassemble, or reverse-engineer** the ProUCL binaries.
-- **Never copy source code** from ProUCL or from projects that did.
-- Implementations must be derived **only** from:
+- **Statistical implementations** must never be derived from the ProUCL binaries — only
+  from:
   - the public ProUCL **Technical Guide** and **User Guide** (works of the U.S. Federal
     Government, public domain) — https://www.epa.gov/land-research/proucl-software
   - peer-reviewed papers and standard statistical literature,
   - other open-source statistical libraries under compatible licenses.
+- **UI/UX workflow** may be mapped from the running ProUCL application by direct
+  observation (black-box: menus, dialogs, output sheets, save formats).
+- **Never decompile, disassemble, or reverse-engineer** the ProUCL binaries (they embed
+  licensed third-party components).
+- **Never copy source code** from ProUCL or from projects that did.
 
 If a contribution is based on the Technical Guide, reference the equation/section in a
 comment (e.g. `// ProUCL Technical Guide 5.2, eq. 4-3`). That is the level of detail the

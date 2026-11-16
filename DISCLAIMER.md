@@ -8,10 +8,12 @@ governmental agency.
   associated trademarks belong to their respective owners. They are referenced in this
   project solely to describe the statistical methodology that OpenUCL reimplements and to
   enable result interoperability.
-- OpenUCL is a **clean-room reimplementation** written from publicly available documentation
-  (the ProUCL Technical Guide and User Guide, which are works of the U.S. Federal Government
-  and therefore in the public domain) and from peer-reviewed statistical literature. It
-  contains **no code** from the ProUCL software.
+- OpenUCL's statistical methods are a **clean-room implementation** written from publicly
+  available documentation (the ProUCL Technical Guide and User Guide, which are works of
+  the U.S. Federal Government and therefore in the public domain) and from peer-reviewed
+  statistical literature. It contains **no code** from the ProUCL software. Its desktop
+  interface is modeled on the ProUCL workflow by direct observation of the running
+  application.
 - OpenUCL is provided **"as is"**, without warranty of any kind, express or implied,
   including but not limited to the warranties of merchantability, fitness for a particular
   purpose and non-infringement. In no event shall the authors or copyright holders be liable
