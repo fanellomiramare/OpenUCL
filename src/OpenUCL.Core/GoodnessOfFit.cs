@@ -105,20 +105,29 @@ public static class GoodnessOfFit
         double ssumm2 = Math.Sqrt(summ2);
         double rsn = 1.0 / Math.Sqrt(n);
 
-        a[0] = Poly(Eval1, rsn) - a[0] / ssumm2;
+        // AS R94 correction: the fac normalization subtracts the ORIGINAL
+        // Blom weights from summ2 (Royston's own swilk implementation), while
+        // the denominator uses the NEW poly-adjusted a1/a2 — the weights are
+        // overwritten only after fac is computed. (2026-11-16 fix: the
+        // previous code subtracted the new weights, giving W off by up to
+        // 0.024 vs the canonical R/scipy implementation on real data.)
+        double a0Old = a[0], a1Old = a[1];
+        double a0New = Poly(Eval1, rsn) - a0Old / ssumm2;
 
         if (n > 5)
         {
-            a[1] = Poly(Eval2, rsn) - a[1] / ssumm2;
-            summ2 -= 2.0 * a[0] * a[0] + 2.0 * a[1] * a[1];
-            double denom = 1.0 - 2.0 * a[0] * a[0] - 2.0 * a[1] * a[1];
-            double fac = Math.Sqrt(summ2 / denom);
+            double a1New = -a1Old / ssumm2 + Poly(Eval2, rsn);
+            double fac = Math.Sqrt((summ2 - 2.0 * (a0Old * a0Old + a1Old * a1Old))
+                / (1.0 - 2.0 * a0New * a0New - 2.0 * a1New * a1New));
+            a[0] = a0New;
+            a[1] = a1New;
             for (int i = 2; i < n2; i++) a[i] = -a[i] / fac;
         }
         else
         {
-            summ2 -= 2.0 * a[0] * a[0];
-            double fac = Math.Sqrt(summ2 / (1.0 - 2.0 * a[0] * a[0]));
+            double fac = Math.Sqrt((summ2 - 2.0 * a0Old * a0Old)
+                / (1.0 - 2.0 * a0New * a0New));
+            a[0] = a0New;
             for (int i = 1; i < n2; i++) a[i] = -a[i] / fac;
         }
 

@@ -23,14 +23,24 @@ public class GoodnessOfFitTests
     }
 
     [Fact]
-    public void ShapiroWilk_rejects_uniform_and_exponential_shaped_data()
+    public void ShapiroWilk_rejects_bimodal_and_right_skewed_data()
     {
-        // Uniform on 0..1, n=30: strongly non-normal.
+        // Uniform ramp on 0..1, n=30: canonical SW does NOT reject it (R:
+        // W = 0.9574506, p = 0.2662) — SW is weak on symmetric non-normal
+        // alternatives. Assert the canonical do-not-reject behavior.
         var uniform = Enumerable.Range(1, 30).Select(i => i / 31.0).ToArray();
         var swU = GoodnessOfFit.ShapiroWilk(uniform);
-        Assert.True(swU.W < swU.CriticalValue(0.05), $"uniform W={swU.W} should be below critical");
+        Assert.True(swU.W >= swU.CriticalValue(0.05), $"uniform W={swU.W} should be at/above critical");
 
-        // Right-skewed sample (exponential-like): 1..30 is monotone; use squares for skew.
+        // Bimodal (two clusters at 1 and 10): strongly rejected (R: W = 0.6382368,
+        // p = 2.2e-07).
+        var bimodal = Enumerable.Repeat(1.0, 15).Concat(Enumerable.Repeat(10.0, 15)).ToArray();
+        var swB = GoodnessOfFit.ShapiroWilk(bimodal);
+        Assert.Equal(0.6382368, swB.W, 5);
+        Assert.True(swB.PValue < 1e-5, $"bimodal p={swB.PValue}");
+
+        // Right-skewed sample (exponential-like): squares 1..30 / 900 — rejected
+        // at 5% (R: W = 0.9014205, p = 0.0091).
         var skewed = Enumerable.Range(1, 30).Select(i => i * i / 900.0).ToArray();
         var swS = GoodnessOfFit.ShapiroWilk(skewed);
         Assert.True(swS.PValue < 0.05, $"skewed p={swS.PValue} should be < 0.05");
@@ -52,24 +62,46 @@ public class GoodnessOfFitTests
         Assert.Equal(0.6369, skewed.PValue, 3);
     }
 
-    // Regression pin on a fixed sample. ProUCL-parity status (campaign 2,
-    // scheda F, 2026-11-15, silver n=56 Full Precision ON): our W DIFFERS from
-    // ProUCL's — normal data: ours 0.222829 vs ProUCL 0.2058465; lognormal
-    // (logged) data: ours 0.947114 vs ProUCL 0.9512797 (same conclusions at the
-    // sheet significance levels; ProUCL p-values: 0 at 1% and 0.0464453 at 10%).
-    // Lilliefors D matches ProUCL EXACTLY (0.4222939 and 0.1165799) — so the
-    // divergence is in the Royston W algorithm/variant, not in the data. Open
-    // item: discriminate our AS R94 variant against R's shapiro.test (validation
-    // harness). This test guards against accidental algorithm changes meanwhile.
+    // Regression pin on a fixed sample. History: the 2026-11-16 investigation
+    // (decision #77) found our W off vs the canonical AS R94 — the fac
+    // normalization subtracted the poly-adjusted weights instead of the
+    // original Blom weights; after the fix our W matches R 4.6.2 and
+    // scipy 1.17.1 exactly on every dataset (see the referee golden below).
+    // ProUCL's own W deviates from AS R94 in a different direction (e.g.
+    // silver n=56: ProUCL 0.2058465 vs canonical 0.1835390); conclusions
+    // agree at the sheet significance levels. This test guards against
+    // accidental algorithm changes.
     [Fact]
     public void ShapiroWilk_regression_pin_n20()
     {
         double[] data = { 0.13, 0.19, 0.2, 0.22, 0.23, 0.28, 0.3, 0.33, 0.36, 0.38,
                           0.39, 0.4, 0.41, 0.43, 0.46, 0.48, 0.6, 0.63, 0.68, 0.97 };
         var sw = GoodnessOfFit.ShapiroWilk(data);
-        Assert.Equal(0.886976, sw.W, 5);
-        // Data are right-skewed (max 0.97 detached): must reject at 5%.
-        Assert.True(sw.PValue < 0.05, $"p={sw.PValue}");
+        Assert.Equal(0.913322, sw.W, 5);
+        // Mildly right-skewed sample: the canonical algorithm does NOT reject
+        // it at 5% (scipy: p = 0.0737571 — identical to ours, W and p).
+        Assert.Equal(0.0737571, sw.PValue, 5);
+    }
+
+    /// <summary>
+    /// Referee golden: our W is the canonical AS R94 — verified identical to
+    /// R 4.6.2 shapiro.test and scipy 1.17.1 stats.shapiro on five data sets
+    /// (2026-11-16, decision #77): mtcars mpg n=32 (0.9695029), silver raw
+    /// n=56 (0.1835390), silver logged (0.9527821), silver without the 560
+    /// outlier n=55 (0.4029366), and the (0,1,2,100) n=4 probe (0.64550176).
+    /// ProUCL 5.2's own W deviates from the canonical algorithm in a
+    /// different direction than our pre-fix port did (e.g. silver: ProUCL
+    /// 0.2058465); documented deviation, conclusions agree.
+    /// </summary>
+    [Fact]
+    public void ShapiroWilk_matches_canonical_AS_R94_referee()
+    {
+        var mtcars = new double[] { 21, 21, 22.8, 21.4, 18.7, 18.1, 14.3, 24.4, 22.8, 19.2, 17.8, 16.4, 17.3, 15.2, 10.4, 10.4, 14.7, 32.4, 30.4, 33.9, 21.5, 27.3, 26, 30.4, 15.8, 19.7, 15, 21.4, 21, 22.8, 24.4, 22.8 };
+        Assert.Equal(0.9695029, GoodnessOfFit.ShapiroWilk(mtcars).W, 5);       // R/scipy: 0.9695029
+        Assert.Equal(0.1835390, GoodnessOfFit.ShapiroWilk(BtvUnitTests.Silver).W, 5);   // R/scipy: 0.1835390
+        Assert.Equal(0.9527821, GoodnessOfFit.ShapiroWilk(BtvUnitTests.Silver.Select(v => Math.Log(v)).ToArray()).W, 5); // R/scipy: 0.9527821
+        Assert.Equal(0.4029366, GoodnessOfFit.ShapiroWilk(BtvUnitTests.Silver.Where(v => v != 560).ToArray()).W, 5); // R/scipy: 0.4029366
+        Assert.Equal(0.64550176, GoodnessOfFit.ShapiroWilk(new double[] { 0, 1, 2, 100 }).W, 5); // R/scipy: 0.64550176
     }
 
     [Fact]

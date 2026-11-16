@@ -85,6 +85,7 @@ row below is golden-locked against live ProUCL 5.2 output at Full Precision
 | Land's H-UCL | H interpolated from Land's (1975) tables; 90% and 95% levels only (+3.6% vs exact at n = 55, +5.3% at n = 56) | exact H for any sample size and confidence level (conditional-t polar integration) |
 | UTL tolerance factor K | tabulated for n ≤ 30 (2.309 vs exact 2.30929 at n = 24), Natrella approximation beyond (−0.28% vs exact at n = 56) | exact noncentral-t K for any n, confidence level and coverage — no table/approximation switch |
 | Dixon outlier test | tabulated critical values (TG Appendix A) | exact critical values by integration of order-statistic ratios (n ≤ 25, any α) |
+| Shapiro-Wilk W | variant deviating from the published AS R94 algorithm (silver n = 56: 0.2058465 vs canonical 0.1835390; conclusions agree at sheet significance levels) | canonical AS R94 — verified identical to R 4.6.2 and scipy at 7 decimals on 5 data sets (W and p-values) |
 | Nonparametric percentile | Excel PERCENTILE.INC convention — while the TG's own worked example contradicts the TG text (it uses p·n) | same Excel convention as ProUCL, with the TG discrepancy documented |
 
 ## What OpenUCL computes today
