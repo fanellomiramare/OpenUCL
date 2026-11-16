@@ -19,6 +19,7 @@
   <ItemGroup>
     <ProjectReference Include="..\OpenUCL.Core\OpenUCL.Core.csproj" />
     <ProjectReference Include="..\OpenUCL.Data\OpenUCL.Data.csproj" />
+    <ProjectReference Include="..\OpenUCL.Reports\OpenUCL.Reports.csproj" />
   </ItemGroup>
 
 </Project>

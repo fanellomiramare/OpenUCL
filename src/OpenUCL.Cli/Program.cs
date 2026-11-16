@@ -1059,78 +1059,22 @@ internal static class Program
         {
             var warns = new List<string>();
             double[] detected = s.DetectedValues();
-            var sheet = new ReportSheet($"OpenUCL {Version} — OUTLIER TESTS (alpha = {alpha:G2})");
-            sheet.Header.Add(("series", $"{s.PointId} / {s.Parameter}    n (detects) = {detected.Length}    ND = {s.NondetectCount}"));
-            sheet.Header.Add(("generated", DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm 'UTC'", CultureInfo.InvariantCulture)));
-            sheet.AddSection("notes")
-                .AddNote("outlier tests are exploratory: confirm flagged values with site knowledge before exclusion (TG section 7.2).")
-                .AddNote("both tests assume normality of the data without the suspected outliers.");
-
-            string dLow = "", dLowOut = "", dHigh = "", dHighOut = "";
-            if (detected.Length is >= 3 and <= 25)
+            var (sheet, summary, buildWarns) =
+                OpenUCL.Reports.OutlierSheets.Build(detected, alpha, r0, Version, s.PointId, s.Parameter, s.NondetectCount);
+            foreach (string w in buildWarns)
             {
-                var d = Outliers.Dixon(detected);
-                string crit = $"10% {F(d.Critical10)} | 5% {F(d.Critical5)} | 1% {F(d.Critical1)}";
-                var sec = sheet.AddSection("dixon extreme value test (n <= 25)");
-                sec.ColumnsAre("tail", "observation", "statistic", "variant", "critical (10/5/1%)", "outlier");
-                sec.AddRow("low", F(d.LowValue), F(d.LowStatistic), d.Variant, crit,
-                    (d.LowOutlier1, d.LowOutlier5, d.LowOutlier10) switch
-                    {
-                        (_, _, true) or (_, true, _) or (true, _, _) => "yes",
-                        _ => "no",
-                    });
-                sec.AddRow("high", F(d.HighValue), F(d.HighStatistic), d.Variant, crit,
-                    (d.HighOutlier1, d.HighOutlier5, d.HighOutlier10) switch
-                    {
-                        (true, _, _) => "yes (1%)",
-                        (_, true, _) => "yes (5%)",
-                        (_, _, true) => "yes (10%)",
-                        _ => "no",
-                    });
-                sec.AddNote("exact critical values computed by numerical integration of the order-statistic ratio distribution.");
-                dLow = F(d.LowStatistic);
-                dLowOut = (d.LowOutlier1, d.LowOutlier5, d.LowOutlier10) switch
-                {
-                    (_, _, true) or (_, true, _) or (true, _, _) => "yes",
-                    _ => "no",
-                };
-                dHigh = F(d.HighStatistic);
-                dHighOut = (d.HighOutlier1, d.HighOutlier5, d.HighOutlier10) switch
-                {
-                    (true, _, _) => "yes (1%)",
-                    (_, true, _) => "yes (5%)",
-                    (_, _, true) => "yes (10%)",
-                    _ => "no",
-                };
-            }
-
-            string out5S = "", out1S = "", firstOutlier = "";
-            if (detected.Length >= 25)
-            {
-                try
-                {
-                    var ros = Outliers.Rosner(detected, r0);
-                    int out5 = ros.OutliersAt(0.05);
-                    int out1 = ros.OutliersAt(0.01);
-                    var sec = sheet.AddSection($"rosner test (n >= 25, up to {ros.MaxOutliers} outliers)");
-                    sec.ColumnsAre("#", "remaining", "mean", "sd", "potential outlier", "R", "crit 5%", "crit 1%");
-                    foreach (var st in ros.Steps)
-                        sec.AddRow(st.Stage.ToString(), st.Remaining.ToString(), F(st.Mean), F(st.Sd),
-                            F(st.Value), F(st.R), F(st.Critical5), F(st.Critical1));
-                    sec.AddNote($"at 5%: {out5} potential outliers; at 1%: {out1} potential outliers " +
-                                "(critical values: generalized ESD formulation, within ~3% of the Rosner tables).");
-                    out5S = out5.ToString(CultureInfo.InvariantCulture);
-                    out1S = out1.ToString(CultureInfo.InvariantCulture);
-                    firstOutlier = out5 > 0 ? F(ros.Steps[0].Value) : "";
-                }
-                catch (ArgumentException ex) { warns.Add($"Rosner: {ex.Message}"); }
+                warns.Add(w);
+                Console.Error.WriteLine($"warning: {s.PointId}/{s.Parameter}: {w}");
             }
 
             if (batch is null) Console.Write(sheet.RenderText());
             else batch.WriteSheet(s.PointId, s.Parameter, sheet.RenderText());
 
             batch?.AddRow(s.PointId, s.Parameter, detected.Length.ToString(CultureInfo.InvariantCulture),
-                dLow, dLowOut, dHigh, dHighOut, out5S, out1S, firstOutlier,
+                summary["dixon_low_statistic"], summary["dixon_low_outlier"],
+                summary["dixon_high_statistic"], summary["dixon_high_outlier"],
+                summary["rosner_outliers_5pct"], summary["rosner_outliers_1pct"],
+                summary["rosner_first_outlier"],
                 warns.Count == 0 ? "" : $"{warns.Count}: {warns[0]}");
             series++;
         }

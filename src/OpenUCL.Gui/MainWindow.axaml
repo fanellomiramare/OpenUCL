@@ -6,20 +6,44 @@
         <Menu Grid.Row="0">
             <MenuItem Header="File">
                 <MenuItem Header="Open Data File..." x:Name="MenuOpen" Click="OnOpenClick" />
+                <MenuItem Header="Close" x:Name="MenuClose" Click="OnCloseClick" />
                 <Separator />
+                <MenuItem Header="Save" x:Name="MenuSave" Click="OnSaveClick" />
+                <MenuItem Header="Save As..." x:Name="MenuSaveAs" Click="OnSaveAsClick" />
+                <Separator />
+                <MenuItem Header="Print" IsEnabled="False" />
                 <MenuItem Header="Exit" Command="{Binding $parent[Window].Close}" />
             </MenuItem>
             <MenuItem Header="Graphs" IsEnabled="False" />
-            <MenuItem Header="Statistical Tests" IsEnabled="False" />
+            <MenuItem Header="Statistical Tests">
+                <MenuItem Header="Outlier Tests">
+                    <MenuItem Header="Full (w/o NDs)">
+                        <MenuItem Header="Compute" x:Name="MenuOutlierCompute" Click="OnOutlierComputeClick" />
+                    </MenuItem>
+                    <MenuItem Header="With NDs" IsEnabled="False" />
+                </MenuItem>
+                <MenuItem Header="Goodness-of-Fit Tests" IsEnabled="False" />
+                <MenuItem Header="Single Sample Hypothesis" IsEnabled="False" />
+                <MenuItem Header="Two Sample Hypothesis" IsEnabled="False" />
+                <MenuItem Header="One-way ANOVA" IsEnabled="False" />
+                <MenuItem Header="Trend Analysis" IsEnabled="False" />
+            </MenuItem>
             <MenuItem Header="Upper Limits/BTVs" IsEnabled="False" />
             <MenuItem Header="UCLs/EPCs" IsEnabled="False" />
+            <MenuItem Header="Windows" IsEnabled="False" />
             <MenuItem Header="Help">
                 <MenuItem Header="About OpenUCL..." IsEnabled="False" />
             </MenuItem>
         </Menu>
 
-        <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="8,4">
-            <CheckBox x:Name="LongFormatCheck" Content="Open CSV as long format (one observation per row)" VerticalContentAlignment="Center" />
+        <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="8,4" Spacing="10">
+            <CheckBox x:Name="LongFormatCheck" Content="Open CSV as long format (one observation per row)" />
+            <StackPanel Orientation="Horizontal" Spacing="4">
+                <TextBlock Text="ND flag column (optional, long CSV):" Opacity="0.7" />
+                <ComboBox x:Name="FlagColumnBox" MinWidth="140" SelectionChanged="OnFlagColumnChanged" />
+                <TextBlock Text="ND value:" Opacity="0.7" />
+                <TextBox x:Name="FlagValueBox" Width="50" Text="0" />
+            </StackPanel>
             <TextBlock Text="  select a series on the left to see its summary sheet" Opacity="0.6" />
         </StackPanel>
 
@@ -27,24 +51,12 @@
             <Grid Grid.Column="0" RowDefinitions="Auto,*,Auto" Margin="8,4">
                 <TextBlock Grid.Row="0" Text="Series" FontWeight="Bold" Margin="0,0,0,4" />
                 <ListBox Grid.Row="1" x:Name="SeriesList" SelectionMode="Single,Toggle"
-                         SelectionChanged="OnSeriesSelected" />
+                         SelectionChanged="SeriesList_SelectionChanged" />
                 <TextBlock Grid.Row="2" x:Name="FileInfoText" Opacity="0.7" TextWrapping="Wrap" Margin="0,6,0,0" />
             </Grid>
 
             <Border Grid.Column="1" Margin="4,4" BorderBrush="Gray" BorderThickness="1" CornerRadius="2">
-                <TabControl x:Name="CenterTabs">
-                    <TabItem Header="Data">
-                        <DataGrid x:Name="DataGrid" AutoGenerateColumns="True" IsReadOnly="True"
-                                  CanUserSortColumns="True" GridLinesVisibility="Horizontal"
-                                  BorderThickness="0" />
-                    </TabItem>
-                    <TabItem Header="Sheet">
-                        <ScrollViewer>
-                            <TextBlock x:Name="SheetPreview" FontFamily="Consolas, 'Courier New', monospace"
-                                       FontSize="13" Margin="8,6" TextWrapping="NoWrap"
-                                       Text="Select a series to see its summary sheet." />
-                        </ScrollViewer>
-                    </TabItem>
+                <TabControl x:Name="CenterTabs" SelectionChanged="CenterTabs_SelectionChanged">
                 </TabControl>
             </Border>
 
