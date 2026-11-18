@@ -134,6 +134,25 @@ public class GoodnessOfFitTests
         Assert.True(lf.D <= crit95, "perfect-normal sample must pass Lilliefors at 5%");
     }
 
+    /// <summary>
+    /// Regression (decision #83): the ucl sheet passes alpha = 1 - cc, and
+    /// 1 - 0.95 = 0.050000000000000044 fell outside the "&lt;= 0.05" bucket — the
+    /// 95% sheet used the 10% critical value (TG Example 2-2, n = 25: 0.158844
+    /// instead of 0.173584, the value `gof` prints) and the 99% sheet the 5% one.
+    /// </summary>
+    [Fact]
+    public void Lilliefors_critical_value_is_robust_to_one_minus_cc_rounding()
+    {
+        var lf = new LillieforsResult(25, 0.2);
+        Assert.Equal(lf.CriticalValue(0.05), lf.CriticalValue(1.0 - 0.95), 12);
+        Assert.Equal(lf.CriticalValue(0.10), lf.CriticalValue(1.0 - 0.90), 12);
+        Assert.Equal(lf.CriticalValue(0.01), lf.CriticalValue(1.0 - 0.99), 12);
+        Assert.Equal(0.173584, lf.CriticalValue(1.0 - 0.95), 6);
+        Assert.Equal(0.05, LillieforsResult.TabulatedAlpha(1.0 - 0.95));
+        Assert.Equal(0.01, LillieforsResult.TabulatedAlpha(1.0 - 0.99));
+        Assert.Equal(0.05, LillieforsResult.TabulatedAlpha(0.025));   // between levels: the 0.05 factor (noted on the sheets)
+    }
+
     [Fact]
     public void Conclude_combines_tests_proUCL_style()
     {

@@ -71,10 +71,84 @@ public class UclGoldenTests
     [Fact]
     public void Adjusted_significance_interpolates_table_2_2()
     {
-        Assert.Equal(0.0395, Ucl.AdjustedSignificance(0.05, 25), 5);   // TG: 0.0395 for n=25
+        Assert.Equal(0.0395, Ucl.AdjustedSignificance(0.05, 25), 5);   // TG Example 2-2: 0.0395 for n=25
+        Assert.Equal(0.0392, Ucl.AdjustedSignificance(0.05, 24), 5);   // TG Oahu sheet (n=24): 0.0392
         Assert.Equal(0.0380, Ucl.AdjustedSignificance(0.05, 20), 5);
         Assert.Equal(0.0440, Ucl.AdjustedSignificance(0.05, 40), 5);
-        Assert.Equal(0.05, Ucl.AdjustedSignificance(0.05, 60), 5);     // >= 50: no adjustment
+        Assert.Equal(0.0086, Ucl.AdjustedSignificance(0.05, 3), 5);    // n <= 5: first table row
+        Assert.Equal(0.0724, Ucl.AdjustedSignificance(0.10, 10), 5);
+        Assert.Equal(0.0015, Ucl.AdjustedSignificance(0.01, 10), 5);
+    }
+
+    /// <summary>
+    /// Beyond n = 40 ProUCL interpolates in 1/n towards beta = alpha (decision
+    /// #82): beta(n) = alpha - (alpha - beta40) * 40 / n. Anchors: ProUCL 5.2
+    /// live sheet at Full Precision on silver (n = 56) prints 0.0457143; TG
+    /// Table 2-8 (pyrene without outlier, n = 55) prints 0.0456. The old rule
+    /// (no adjustment beyond n = 50, flat 0.0440 for 40 &lt; n &lt;= 50) matched neither.
+    /// </summary>
+    [Fact]
+    public void Adjusted_significance_beyond_n40_matches_ProUCL()
+    {
+        Assert.Equal(0.0457143, Ucl.AdjustedSignificance(0.05, 56), 7);   // ProUCL live FP: 0.0457143
+        Assert.Equal(0.0456, Ucl.AdjustedSignificance(0.05, 55), 4);      // TG Table 2-8: 0.0456
+        Assert.Equal(0.046, Ucl.AdjustedSignificance(0.05, 60), 9);
+        Assert.Equal(0.0452, Ucl.AdjustedSignificance(0.05, 50), 9);
+        double large = Ucl.AdjustedSignificance(0.05, 1_000_000);
+        Assert.InRange(large, 0.04999, 0.05);                              // -> alpha as n grows
+    }
+
+    /// <summary>
+    /// TG 5.2 section 2.4: ProUCL supports the adjusted gamma UCL only at the
+    /// 0.90, 0.95 and 0.99 confidence levels. Elsewhere the method is not
+    /// available (the old code silently reused the 0.05 row: at 97.5% it gave
+    /// beta 0.0395 > alpha and returned the 95% value).
+    /// </summary>
+    [Theory]
+    [InlineData(0.025)]
+    [InlineData(0.20)]
+    [InlineData(0.001)]
+    public void Adjusted_gamma_not_available_outside_90_95_99(double alpha)
+    {
+        Assert.False(Ucl.AdjustedGammaSupported(alpha));
+        Assert.True(double.IsNaN(Ucl.AdjustedSignificance(alpha, 25)));
+        var u = Ucl.Compute(X, 1.0 - alpha);
+        Assert.True(double.IsNaN(u.BetaAdjusted));
+        Assert.True(double.IsNaN(u.GammaAdjusted));
+        Assert.False(double.IsNaN(u.GammaApproximate));
+    }
+
+    [Theory]
+    [InlineData(0.90)]
+    [InlineData(0.95)]
+    [InlineData(0.99)]
+    public void Adjusted_gamma_is_more_conservative_than_approximate(double cc)
+    {
+        var u = Ucl.Compute(X, cc);
+        Assert.True(u.BetaAdjusted < 1.0 - cc);
+        Assert.True(u.GammaAdjusted > u.GammaApproximate);
+    }
+
+    /// <summary>
+    /// Golden: ProUCL 5.2 live sheet on silver WITHOUT the outlier 560 (n = 55),
+    /// Full Precision ON — campaign 2, scheda H (2026-11-15). The adjusted gamma
+    /// UCL at n = 55 exercises the beyond-table beta (decision #82). Ours:
+    /// approximate 7.8239249 / adjusted 7.8974160 — both ~1e-6 relative above
+    /// ProUCL, the same residual already seen on the chi-square value itself
+    /// (ours 39.1959055 vs 39.195937: inversion precision, cf. the silver n = 56
+    /// golden asserted at 3 decimals). Same residual on both rows = same beta.
+    /// </summary>
+    [Fact]
+    public void Silver_no_outlier_gamma_ucls_match_ProUCL_full_precision()
+    {
+        var data = BtvUnitTests.Silver.Where(v => v != 560).ToArray();
+        Assert.Equal(55, data.Length);
+        var u = Ucl.Compute(data, 0.95);
+        Assert.Equal(0.5187397, u.KHat, 6);             // ProUCL: 0.5187397
+        Assert.Equal(0.5025660, u.KStar, 6);            // ProUCL: 0.5025660
+        Assert.Equal(39.195937, u.ChiSquareApprox, 4);  // ProUCL: 39.195937
+        Assert.Equal(7.8239174, u.GammaApproximate, 4); // ProUCL: 7.8239174
+        Assert.Equal(7.8974075, u.GammaAdjusted, 4);    // ProUCL: 7.8974075 (was not computed at n = 55 before #82)
     }
 
     [Fact]

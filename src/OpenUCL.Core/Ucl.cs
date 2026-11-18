@@ -1,9 +1,12 @@
 namespace OpenUCL.Core;
 
 /// <summary>
-/// Deterministic pseudo-random numbers (xoshiro256**, fixed seed) so that
-/// bootstrap UCLs are reproducible and auditable. The seed is chosen by the
-/// caller and printed on the output sheets.
+/// Deterministic pseudo-random numbers — xoshiro256** 1.0 (Blackman and Vigna
+/// 2018), state seeded by SplitMix64 — so that bootstrap UCLs are reproducible
+/// and auditable with any reference implementation. The seed is chosen by the
+/// caller and printed on the output sheets. (Before decision #86 the output
+/// scrambler was a non-standard variant — shift instead of rotation, x5
+/// instead of x9 — with output bits 48-51 always zero.)
 /// </summary>
 public sealed class SeededRng
 {
@@ -18,6 +21,12 @@ public sealed class SeededRng
         _s3 = SplitMix(ref seed);
     }
 
+    /// <summary>Raw-state constructor, for the reference test vector.</summary>
+    internal SeededRng(ulong s0, ulong s1, ulong s2, ulong s3)
+    {
+        _s0 = s0; _s1 = s1; _s2 = s2; _s3 = s3;
+    }
+
     private static ulong SplitMix(ref ulong state)
     {
         state += 0x9E3779B97F4A7C15UL;
@@ -29,11 +38,10 @@ public sealed class SeededRng
 
     public ulong NextUInt64()
     {
-        ulong result = (_s1 * 5) << 7;
-        result = ((result << 45) | (result >> 19)) * 5;
+        ulong result = System.Numerics.BitOperations.RotateLeft(_s1 * 5, 7) * 9;
         ulong t = _s1 << 17;
         _s2 ^= _s0; _s3 ^= _s1; _s1 ^= _s2; _s0 ^= _s3; _s2 ^= t;
-        _s3 = (_s3 << 45) | (_s3 >> 19);
+        _s3 = System.Numerics.BitOperations.RotateLeft(_s3, 45);
         return result;
     }
 
@@ -68,10 +76,10 @@ public sealed record UclResult
     public double ThetaHat { get; init; }
     public double ThetaStar { get; init; }
     public double ChiSquareApprox { get; init; }             // chi2_{nu*}(alpha)
-    public double BetaAdjusted { get; init; }                // adjusted significance level (table 2-2)
+    public double BetaAdjusted { get; init; }                // adjusted significance level (table 2-2); NaN when not available
     public double ChiSquareAdjusted { get; init; }           // chi2_{nu*}(beta)
-    public double GammaApproximate { get; init; }
-    public double GammaAdjusted { get; init; }
+    public double GammaApproximate { get; init; }            // TG eq. 2-34 (ProUCL: "use when n>=50")
+    public double GammaAdjusted { get; init; }               // TG eq. 2-35 (ProUCL: "use when n<50"); NaN when not available
 
     // Bootstrap (seeded, reproducible; TG section 2.4.9)
     public required int BootstrapRuns { get; init; }
@@ -122,6 +130,10 @@ public static class Ucl
         double sumSq = 0;
         foreach (var v in data) { double d = v - mean; sumSq += d * d; }
         double sd = Math.Sqrt(sumSq / (n - 1));
+        if (!(sd > 0))
+            throw new ArgumentException(
+                $"all {n} values are identical ({mean.ToString("G6", System.Globalization.CultureInfo.InvariantCulture)}): " +
+                "UCLs are not defined without variability.", nameof(data));
         double se = sd / Math.Sqrt(n);
         double mu3 = ThirdCentralMoment(data);
         double skewness = mu3 / (sd * sd * sd);
@@ -142,24 +154,31 @@ public static class Ucl
         double kHat = double.NaN, kStar = double.NaN, thHat = double.NaN, thStar = double.NaN;
         double chiApprox = double.NaN, betaAdj = double.NaN, chiAdj = double.NaN;
         double gammaApprox = double.NaN, gammaAdj = double.NaN;
+        GammaMLE? gammaFit = null;
         if (gammaOk)
         {
-            var fit = GammaDistribution.FitMLE(data);
+            // Near-constant data can leave ln(mean) - mean(ln x) <= 0 in floating
+            // point: the gamma shape is then not estimable (gamma not applicable).
+            try { gammaFit = GammaDistribution.FitMLE(data); }
+            catch (ArgumentException) { gammaOk = false; }
+        }
+        if (gammaOk && gammaFit is not null)
+        {
+            var fit = gammaFit;
             kHat = fit.KHat; kStar = fit.KStar; thHat = fit.ThetaHat; thStar = fit.ThetaStar;
             double nuStar = 2.0 * n * kStar;
             chiApprox = GammaDistribution.Quantile(alpha, nuStar / 2.0, 2.0);
             gammaApprox = 2.0 * n * kStar * mean / chiApprox;                // eq. 2-34
-            if (n <= 50)
+            // Adjusted UCL for every n, as ProUCL prints it ("use when n<50": the
+            // choice between the two belongs to the recommendation logic).
+            betaAdj = AdjustedSignificance(alpha, n);                        // table 2-2
+            // NaN beta (confidence level not supported) or the TG table 2-2
+            // beta = 0.0000 (e.g. alpha = 0.01, n = 5): the adjusted gamma UCL
+            // is not computable (NaN) — never evaluate chi-square at p <= 0.
+            if (betaAdj > 0)
             {
-                betaAdj = AdjustedSignificance(alpha, n);                    // table 2-2
-                // TG table 2-2 prints beta = 0.0000 where the adjustment is not
-                // defined (e.g. alpha = 0.01, n = 5): leave the adjusted gamma UCL
-                // not computable (NaN) instead of evaluating chi-square at p = 0.
-                if (betaAdj > 0)
-                {
-                    chiAdj = GammaDistribution.Quantile(betaAdj, nuStar / 2.0, 2.0);
-                    gammaAdj = 2.0 * n * kStar * mean / chiAdj;              // eq. 2-35
-                }
+                chiAdj = GammaDistribution.Quantile(betaAdj, nuStar / 2.0, 2.0);
+                gammaAdj = 2.0 * n * kStar * mean / chiAdj;                  // eq. 2-35
             }
         }
 
@@ -183,29 +202,59 @@ public static class Ucl
         };
     }
 
-    /// <summary>Adjusted significance level beta for the adjusted gamma UCL (TG table 2-2), linear in n.</summary>
+    /// <summary>
+    /// Confidence levels at which ProUCL supports the adjusted gamma UCL: TG 5.2
+    /// §2.4 — "three confidence levels, namely: 0.90, 0.95, and 0.99" (Table 2-2
+    /// lists beta only for alpha = 0.10, 0.05, 0.01).
+    /// </summary>
+    public static bool AdjustedGammaSupported(double alpha) => AdjustedTableRow(alpha) is not null;
+
+    /// <summary>
+    /// Adjusted significance level beta for the adjusted gamma UCL (TG eq. 2-35,
+    /// Table 2-2, Grice and Bain 1980). Returns NaN when the confidence level is
+    /// not one of 0.90/0.95/0.99 (method not available, TG §2.4).
+    /// Sample size: n &lt;= 5 takes the n = 5 row; between the table rows linear
+    /// interpolation in n (TG: "one can use interpolation"; ProUCL prints 0.0395
+    /// at n = 25, TG Example 2-2, and 0.0392 at n = 24, Oahu); beyond n = 40
+    /// linear interpolation in 1/n towards the n = infinity row (beta = alpha):
+    /// beta(n) = alpha - (alpha - beta40) * 40 / n. Anchors: TG Table 2-8
+    /// (pyrene, n = 55) prints 0.0456 — ours 0.0456364; ProUCL 5.2 live sheet
+    /// at Full Precision (silver, n = 56) prints 0.0457143 — ours 0.04571429.
+    /// </summary>
     public static double AdjustedSignificance(double alpha, int n)
     {
-        if (n > 50) return alpha;   // approximate UCL beyond n = 50: no adjustment
-        // table rows: n -> beta; guard against 1-cc rounding (e.g. 0.050000000000000044)
-        (int n, double b)[] row = alpha switch
-        {
-            <= 0.0100001 => new[] { (5, 0.0000), (10, 0.0015), (20, 0.0046), (40, 0.0070), (int.MaxValue, 0.0100) },
-            <= 0.0500001 => new[] { (5, 0.0086), (10, 0.0267), (20, 0.0380), (40, 0.0440), (int.MaxValue, 0.0500) },
-            _ => new[] { (5, 0.0432), (10, 0.0724), (20, 0.0866), (40, 0.0934), (int.MaxValue, 0.1000) },
-        };
+        var row = AdjustedTableRow(alpha);
+        if (row is null) return double.NaN;
+
+        if (n <= row[0].n) return row[0].b;
         for (int i = 0; i < row.Length - 1; i++)
         {
-            if (n <= row[i].n)
-                return row[i].b;
             if (n <= row[i + 1].n)
             {
                 double frac = (n - row[i].n) / (double)(row[i + 1].n - row[i].n);
                 return row[i].b + frac * (row[i + 1].b - row[i].b);
             }
         }
-        return row[^1].b;
+        var last = row[^1];               // n > 40: 1/n interpolation towards beta = alpha
+        double asymptote = TabulatedAlpha(alpha);
+        return asymptote - (asymptote - last.b) * last.n / n;
     }
+
+    // Table 2-2 rows (n, beta) up to n = 40; the n = infinity row is beta = alpha.
+    private static (int n, double b)[]? AdjustedTableRow(double alpha) => TabulatedAlpha(alpha) switch
+    {
+        0.01 => new[] { (5, 0.0000), (10, 0.0015), (20, 0.0046), (40, 0.0070) },
+        0.05 => new[] { (5, 0.0086), (10, 0.0267), (20, 0.0380), (40, 0.0440) },
+        0.10 => new[] { (5, 0.0432), (10, 0.0724), (20, 0.0866), (40, 0.0934) },
+        _ => null,
+    };
+
+    // 1 - cc rounding guard (0.95 gives alpha = 0.050000000000000044).
+    private static double TabulatedAlpha(double alpha) =>
+        Math.Abs(alpha - 0.01) < 1e-9 ? 0.01
+        : Math.Abs(alpha - 0.05) < 1e-9 ? 0.05
+        : Math.Abs(alpha - 0.10) < 1e-9 ? 0.10
+        : double.NaN;
 
     private static (double Standard, double Percentile, double Bca, double BootstrapT) Bootstrap(
         ReadOnlySpan<double> data, double alpha, int runs, ulong seed)
@@ -257,26 +306,19 @@ public static class Ucl
         int less = 0;
         foreach (var m in means) if (m < meanAll) less++;
         double z0 = NormalDistribution.Quantile(less / (double)runs);
-        double meanJackSum = 0, meanJackSqSum = 0;
-        for (int i = 0; i < n; i++)
-        {
-            double sum = 0;
-            for (int j = 0; j < n; j++) if (j != i) sum += data[j];
-            double mj = sum / (n - 1.0);
-            meanJackSum += mj;
-            meanJackSqSum += mj * mj;
-        }
-        double meanJack = meanJackSum / n;
+        // Jackknife acceleration (eq. 2-61): the leave-one-out mean is
+        // (S - x_i)/(n - 1), O(n) instead of O(n^2); the mean of the jackknife
+        // means equals the sample mean, so meanAll stands for it.
+        double total = 0;
+        foreach (var v in data) total += v;
         double acc3 = 0, acc2 = 0;
         for (int i = 0; i < n; i++)
         {
-            double sum = 0;
-            for (int j = 0; j < n; j++) if (j != i) sum += data[j];
-            double d = meanAll - sum / (n - 1.0);
+            double d = meanAll - (total - data[i]) / (n - 1.0);
             acc3 += d * d * d;
             acc2 += d * d;
         }
-        double aHat = acc3 / (6.0 * Math.Pow(acc2, 1.5));   // eq. 2-61 (meanJack term cancels)
+        double aHat = acc3 / (6.0 * Math.Pow(acc2, 1.5));   // eq. 2-61
         double z1 = NormalDistribution.Quantile(1.0 - alpha);
         double alpha2 = NormalDistribution.Cdf(z0 + (z0 + z1) / (1.0 - aHat * (z0 + z1)));   // eq. 2-59
         double bca = means[OrderIndex(Math.Clamp(alpha2, 1.0 / runs, 1.0 - 1.0 / runs), runs)];

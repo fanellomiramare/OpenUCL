@@ -244,6 +244,7 @@ internal static class Program
             "lillifors_d", "d_crit", "conclusion", "warnings");
 
         int series = 0;
+        bool largeN = false;
         foreach (var s in spec.ReadSeries())
         {
             var warns = new List<string>();
@@ -260,24 +261,39 @@ internal static class Program
             }
 
             string w = "-", p = "-", wc = "-", d = "-", dc = "-";
-            GofConclusion conclusion = GofConclusion.NotNormal;
-            if (detected.Length is >= 3 and <= 5000)
+            string conclusionText = "n/a";
+            if (detected.Length < 3)
             {
-                var sw = GoodnessOfFit.ShapiroWilk(detected);
+                warns.Add("fewer than 3 values, GOF not computed");
+            }
+            else if (detected.Min() == detected.Max())
+            {
+                warns.Add("all values are identical, GOF not defined");
+                Console.Error.WriteLine($"warning: {s.PointId}/{s.Parameter}: {warns[^1]}.");
+            }
+            else
+            {
+                // ProUCL performs S-W up to n = 2000 (TG 2.2.1.2): beyond, Lilliefors alone.
+                ShapiroWilkResult? sw = detected.Length <= GoodnessOfFit.ShapiroWilkProUclMaxN
+                    ? GoodnessOfFit.ShapiroWilk(detected) : null;
                 var lf = GoodnessOfFit.Lilliefors(detected);
-                conclusion = GoodnessOfFit.Conclude(sw, lf, alpha);
-                w = F(sw.W);
-                p = sw.PValue switch { < 1e-4 => "<1e-4", _ => F(sw.PValue) };
-                wc = F(sw.CriticalValue(alpha));
+                var conclusion = GoodnessOfFit.Conclude(sw, lf, alpha);
+                if (sw is not null)
+                {
+                    w = F(sw.W);
+                    p = sw.PValue switch { < 1e-4 => "<1e-4", _ => F(sw.PValue) };
+                    wc = F(sw.CriticalValue(alpha));
+                }
+                else largeN = true;
                 d = F(lf.D);
                 dc = F(lf.CriticalValue(alpha));
+                conclusionText = conclusion switch
+                {
+                    GofConclusion.Normal => $"{distribution}",
+                    GofConclusion.ApproximatelyNormal => $"approx. {distribution}",
+                    _ => $"not {distribution}",
+                };
             }
-            string conclusionText = conclusion switch
-            {
-                GofConclusion.Normal => $"{distribution}",
-                GofConclusion.ApproximatelyNormal => $"approx. {distribution}",
-                _ => $"not {distribution}",
-            };
             Console.WriteLine($"{Truncate(s.PointId, 10),-10} {Truncate(s.Parameter, 8),-8} {detected.Length,5} {s.NondetectCount,4} {w,8} {p,8} {wc,8} {d,8} {dc,8} {conclusionText}");
             batch?.AddRow(s.PointId, s.Parameter, detected.Length.ToString(CultureInfo.InvariantCulture),
                 s.NondetectCount.ToString(CultureInfo.InvariantCulture), w, p, wc, d, dc, conclusionText,
@@ -287,6 +303,11 @@ internal static class Program
         Console.WriteLine(new string('-', 92));
         Console.WriteLine($"{series} series. S-W = Shapiro-Wilk (Royston AS R94); Lill = Lilliefors K-S");
         Console.WriteLine("(D-crit for n<=50 uses the large-sample formula: ProUCL's exact Molin-Abdi table pending).");
+        if (largeN)
+            Console.WriteLine("(S-W is performed for n <= 2000, the ProUCL range — TG 2.2.1.2; larger series are judged by Lilliefors alone.)");
+        double lfAlpha = LillieforsResult.TabulatedAlpha(alpha);
+        if (Math.Abs(lfAlpha - alpha) > 1e-9)
+            Console.WriteLine($"note: Lilliefors D-crit at the tabulated level {lfAlpha:G2} (factors exist for 0.01/0.05/0.10/0.20); S-W W-crit at {alpha:G2}.");
         if (batch is not null)
         {
             batch.Flush($"gof {string.Join(" ", args)} --{distribution}", series);
@@ -317,7 +338,7 @@ internal static class Program
             var warns = new List<string>();
             double[] detected = s.DetectedValues();
             string kh = "-", th = "-", a2 = "-", ac = "-", d = "-", dc = "-";
-            string conclusionText = "not gamma";
+            string conclusionText = "n/a";
             bool acceptAd = false, acceptKs = false;
             if (detected.Length >= 3 && detected.All(v => v > 0))
             {
@@ -535,6 +556,7 @@ internal static class Program
             }
         }
         if (cc is < 0.505 or > 0.995) throw new FormatException("--alpha must be in (0.005, 0.495)");
+        if (boot < 100) throw new FormatException("--boot must be at least 100");
         var spec = InputSpec.Parse(rest.ToArray());
         string fileHash = ShortHash(spec.File);
 
@@ -553,265 +575,38 @@ internal static class Program
                 Console.Error.WriteLine($"warning: {s.PointId}/{s.Parameter}: {message}");
             }
             string WarningsCell() => warns.Count == 0 ? "" : $"{warns.Count}: {warns[0]}";
+            string nCell = s.N.ToString(CultureInfo.InvariantCulture);
+            string ndCell = s.NondetectCount.ToString(CultureInfo.InvariantCulture);
+            string ndPct = s.N > 0 ? (100.0 * s.NondetectCount / s.N).ToString("G4", CultureInfo.InvariantCulture) : "0";
 
             double[] detected = s.DetectedValues();
             if (detected.Length < 3)
             {
                 Warn("fewer than 3 detects, UCLs skipped");
-                batch?.AddRow(new[]
-                {
-                    s.PointId, s.Parameter, s.N.ToString(CultureInfo.InvariantCulture),
-                    s.NondetectCount.ToString(CultureInfo.InvariantCulture),
-                    s.N > 0 ? (100.0 * s.NondetectCount / s.N).ToString("G4", CultureInfo.InvariantCulture) : "0",
-                    "", "", "", "", "", "", "", "", "", "", "", "", "", WarningsCell()
-                });
+                batch?.AddFailureRow(WarningsCell(), s.PointId, s.Parameter, nCell, ndCell, ndPct);
                 continue;
             }
 
-            double alpha = 1.0 - cc;
-            var u = Ucl.Compute(detected, cc, boot, seed);
-            var sw = GoodnessOfFit.ShapiroWilk(detected);
-            var lf = GoodnessOfFit.Lilliefors(detected);
-            bool gammaPass = false, gammaAd = false, gammaKs = false;
-            double adCrit = double.NaN, ksCrit = double.NaN;
-            GammaGofResult? gg = null;
-            if (u.GammaApplicable)
-            {
-                gg = GammaGof.Compute(detected);
-                adCrit = gg.CriticalValue(GammaGofTest.AndersonDarling, SnapAlpha(alpha));
-                ksCrit = gg.CriticalValue(GammaGofTest.KolmogorovSmirnov, SnapAlpha(alpha));
-                gammaAd = gg.AD_A2 <= adCrit;
-                gammaKs = gg.KS_D <= ksCrit;
-                gammaPass = gammaAd || gammaKs;   // ProUCL 5.2: one of the two tests suffices
-            }
-            var normalConclusion = GoodnessOfFit.Conclude(sw, lf, alpha);
-            bool normalPass = normalConclusion != GofConclusion.NotNormal;
-
-            // ND-aware UCLs (computed up front so the recommendation can use them).
-            UclWithNdResult? un = null;
-            if (s.NondetectCount > 0 && detected.Length >= 2)
-            {
-                try { un = UclWithNd.Compute(s.Observations, cc, boot, seed); }
-                catch (ArgumentException ex) { Warn($"ND UCLs: {ex.Message}"); }
-            }
-
-            var sheet = new ReportSheet($"OpenUCL {Version} — UCL / EPC ESTIMATION ({cc * 100:G4}% confidence)");
-            sheet.Header.Add(("input", $"{spec.File} (sha256 {fileHash})"));
-            sheet.Header.Add(("series", $"{s.PointId} / {s.Parameter}    n = {s.N}    detects = {detected.Length}    ND = {s.NondetectCount}{(s.N > 0 ? $" ({100.0 * s.NondetectCount / s.N:G4}%)" : "")}"));
-            sheet.Header.Add(("options", $"bootstrap runs = {boot}, seed = {seed}"));
-            sheet.Header.Add(("generated", DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm 'UTC'", CultureInfo.InvariantCulture)));
-
-            var sum = sheet.AddSection("summary statistics");
-            sum.ColumnsAre("statistic", "value");
-            sum.AddRow("mean (detected)", F(u.Mean));
-            sum.AddRow("sd (detected)", F(u.StandardDeviation));
-            sum.AddRow("skewness k3-hat", F(u.Skewness));
-
-            var gof = sheet.AddSection("goodness of fit (detected observations)");
-            gof.ColumnsAre("test", "statistic", "critical / p", "conclusion");
-            gof.AddRow("Shapiro-Wilk (AS R94)", $"W = {F(sw.W)}", $"p = {(sw.PValue < 1e-4 ? "<1e-4" : F(sw.PValue))}", sw.W >= sw.CriticalValue(alpha) ? "pass" : "fail");
-            gof.AddRow("Lilliefors K-S", $"D = {F(lf.D)}", F(lf.CriticalValue(alpha)), lf.D <= lf.CriticalValue(alpha) ? "pass" : "fail");
-            if (gg is not null)
-            {
-                gof.AddRow("Gamma A-D (SSI 2002)", $"A2 = {F(gg.AD_A2)}", F(adCrit), gammaAd ? "pass" : "fail");
-                gof.AddRow("Gamma K-S (SSI 2002)", $"D = {F(gg.KS_D)}", F(ksCrit), gammaKs ? "pass" : "fail");
-            }
-            string gofText = gammaPass ? "detected data follow an approximate gamma distribution"
-                : normalPass == false ? "detected data do not follow normal, lognormal or gamma distributions"
-                : normalConclusion == GofConclusion.Normal ? "detected data follow an approximate normal distribution"
-                : "detected data follow an approximate normal distribution (one of two tests)";
-            gof.AddNote(gofText + $" at {alpha:G2} significance (ProUCL 5.2 logic: one of two tests).");
-
-            if (gg is not null)
-            {
-                var gam = sheet.AddSection("gamma parameters (MLE on detected data)");
-                gam.ColumnsAre("parameter", "value");
-                gam.AddRow("k-hat (MLE)", F(u.KHat));
-                gam.AddRow("k-star (bias corrected)", F(u.KStar));
-                gam.AddRow("theta-hat (MLE)", F(u.ThetaHat));
-                gam.AddRow("theta-star (bias corrected)", F(u.ThetaStar));
-                gam.AddRow($"chi-square ({alpha:G2})", F(u.ChiSquareApprox));
-                if (detected.Length <= 50)
-                {
-                    gam.AddRow($"adjusted significance beta ({alpha:G2})", F(u.BetaAdjusted));
-                    gam.AddRow("adjusted chi-square (beta)", F(u.ChiSquareAdjusted));
-                }
-            }
-
-            var ucls = sheet.AddSection($"ucls / epcs ({cc * 100:G4}% confidence)");
-            ucls.ColumnsAre("method", "UCL", "reference");
-            string? recommended = null; string rationale = "";
-            string? recMethod = null; double? recValue = null;
-            if (un is not null && gammaPass && !double.IsNaN(un.GrosGammaAdjusted))
-            {
-                ucls.AddRowHighlighted("GROS gamma adjusted", F(un.GrosGammaAdjusted), "TG eq. 2-35 on GROS data (n<=50)");
-                recommended = $"GROS gamma adjusted UCL = {F(un.GrosGammaAdjusted)}";
-                recMethod = "GROS gamma adjusted"; recValue = un.GrosGammaAdjusted;
-                rationale = $"nondetects present ({s.NondetectCount} of {s.N}); detected data approximate gamma " +
-                            $"(one of A-D/K-S passes at {alpha:G2}); gamma UCLs computed on the GROS-imputed data set " +
-                            "(TG example 4-4 logic).";
-            }
-            else if (un is not null && normalPass)
-            {
-                ucls.AddRowHighlighted("KM (t)", F(un.KmT), "KM mean + t * SE");
-                recommended = $"KM (t) UCL = {F(un.KmT)}";
-                recMethod = "KM (t)"; recValue = un.KmT;
-                rationale = "detected data are approximately normal; KM estimates in the t equation (TG section 4.6).";
-            }
-            else if (gammaPass && u.GammaApplicable && !double.IsNaN(u.GammaAdjusted))
-            {
-                ucls.AddRowHighlighted("gamma adjusted (n<=50)", F(u.GammaAdjusted), "TG eq. 2-35, table 2-2");
-                recommended = $"gamma adjusted UCL = {F(u.GammaAdjusted)}";
-                recMethod = "gamma adjusted"; recValue = u.GammaAdjusted;
-                rationale = $"n<=50 and detected data approximate gamma (one of A-D/K-S passes at {alpha:G2}); k-star = {F(u.KStar)}.";
-            }
-            else if (gammaPass && u.GammaApplicable)
-            {
-                ucls.AddRowHighlighted("gamma approximate (n>50)", F(u.GammaApproximate), "TG eq. 2-34");
-                recommended = $"gamma approximate UCL = {F(u.GammaApproximate)}";
-                recMethod = "gamma approximate"; recValue = u.GammaApproximate;
-                rationale = $"n>50 and detected data approximate gamma; k-star = {F(u.KStar)}.";
-            }
-            else if (normalPass)
-            {
-                ucls.AddRowHighlighted("Student's t", F(u.StudentT), "TG eq. 2-32");
-                recommended = $"Student's t UCL = {F(u.StudentT)}";
-                recMethod = "Student's t"; recValue = u.StudentT;
-                rationale = "detected data are approximately normal (ProUCL 5.2 logic).";
-            }
-            else if (Math.Abs(u.Skewness) <= 1.0 && un is null)
-            {
-                ucls.AddRowHighlighted("bootstrap-t", F(u.BootstrapT), "TG eq. 2-62");
-                recommended = $"bootstrap-t UCL = {F(u.BootstrapT)}";
-                recMethod = "bootstrap-t"; recValue = u.BootstrapT;
-                rationale = "no parametric distribution identified; mild skewness favors the bootstrap-t.";
-            }
-            else if (un is not null)
-            {
-                ucls.AddRowHighlighted("KM percentile bootstrap", F(un.KmPercentileBootstrap), "bootstrap of observation pairs");
-                recommended = $"KM percentile bootstrap UCL = {F(un.KmPercentileBootstrap)}";
-                recMethod = "KM percentile bootstrap"; recValue = un.KmPercentileBootstrap;
-                rationale = "no parametric distribution identified; KM bootstrap accounts for the nondetects " +
-                            "(skewness caveat: coverage may fall short of nominal for highly skewed data).";
-            }
-            else if (detected.Length < 75)
-            {
-                recommended = null;
-                rationale = "small sample with high skew and no identifiable distribution: " +
-                            "no recommendation is provided (ProUCL 5.2 logic); consult a statistician.";
-            }
-            else
-            {
-                ucls.AddRowHighlighted("bootstrap-t", F(u.BootstrapT), "TG eq. 2-62");
-                recommended = $"bootstrap-t UCL = {F(u.BootstrapT)}";
-                recMethod = "bootstrap-t"; recValue = u.BootstrapT;
-                rationale = "large sample: the bootstrap-t is the preferred nonparametric choice.";
-            }
-
-            ucls.AddRow("Student's t", F(u.StudentT), "TG eq. 2-32");
-            ucls.AddRow("modified-t (Johnson)", F(u.ModifiedT), "TG eq. 2-37");
-            ucls.AddRow("jackknife", F(u.Jackknife), "equals the t-UCL for a mean");
-            ucls.AddRow("CLT", F(u.Clt), "TG eq. 2-40");
-            ucls.AddRow("adjusted CLT (Chen)", F(u.AdjustedClt), "TG eq. 2-42");
-            ucls.AddRow("Chebyshev (mean, sd)", F(u.ChebyshevMeanSd), "TG eq. 2-46; not recommended by ProUCL 5.2");
-            if (gg is not null && !double.IsNaN(u.GammaApproximate))
-            {
-                ucls.AddRow("gamma approximate", F(u.GammaApproximate), "TG eq. 2-34");
-                if (!double.IsNaN(u.GammaAdjusted))
-                    ucls.AddRow("gamma adjusted", F(u.GammaAdjusted), "TG eq. 2-35");
-            }
-            ucls.AddRow("standard bootstrap", F(u.StandardBootstrap), $"TG eq. 2-56 (seed {seed})");
-            ucls.AddRow("percentile bootstrap", F(u.PercentileBootstrap), "TG eq. 2-57");
-            ucls.AddRow("BCA bootstrap", F(u.BcaBootstrap), "TG eq. 2-58..2-61");
-            ucls.AddRow("bootstrap-t", F(u.BootstrapT), "TG eq. 2-62");
-            ucls.AddRow("Hall's bootstrap", F(LognormalHistorical.HallBootstrap(detected, cc, boot, seed)), "TG eq. 2-63..2-64");
+            // One degenerate series must never stop the batch (audit 2026-11-18 [E1]):
+            // the failure becomes a summary row with the reason in "warnings".
+            ReportSheet sheet;
+            string[] summary;
             try
             {
-                double meanLog = 0;
-                foreach (var v in detected) meanLog += Math.Log(v);
-                meanLog /= detected.Length;
-                double sdLog = Math.Sqrt(detected.Sum(v => Math.Pow(Math.Log(v) - meanLog, 2)) / (detected.Length - 1));
-                var (mvueMean, mvueSd) = LognormalHistorical.Mvue(meanLog, sdLog, detected.Length);
-                double mvueSe = LognormalHistorical.MvueSe(meanLog, sdLog, detected.Length);
-                ucls.AddRow("MVUE mean (lognormal)", F(mvueMean), "TG eq. 2-14 (Finney/Bradu-Mundlak)");
-                ucls.AddRow("MVUE sd (lognormal)", F(mvueSd), "TG eq. 2-15");
-                ucls.AddRow("MVUE SE (lognormal)", F(mvueSe), "TG eq. 2-16 (SE of the MVUE mean)");
-                var mv = sheet.AddSection("chebyshev on mvue (lognormal, historical)");
-                mv.ColumnsAre("confidence", "UCL", "reference");
-                foreach (var level in new[] { 0.90, 0.95, 0.975, 0.99 })
-                    mv.AddRow($"{level * 100:G4}% Chebyshev (MVUE)",
-                        F(LognormalHistorical.ChebyshevMvueUcl(mvueMean, mvueSe, level)),
-                        "TG eq. 2-47 (MVUE mean + SE); not recommended by ProUCL 5.2");
-
-                // Land's H-UCL (TG eq. 2-36; EPA/OSWER 9285.6-10 exhibits 3-4).
-                // H is computed exactly by polar integration of the conditional-t
-                // density. ProUCL instead interpolates Land's (1975) tables (only
-                // the 90%/95% levels), which agree with the exact values within
-                // table precision for n up to ~31 but inflate H by 3.5-5.5% for larger
-                // n (silver data set, n=55-56; measured 18.54/17.599 = +5.3% and
-                // 11.11/10.719 = +3.6%, decision #45).
-                double hLand = LandExact.LandCriticalH(detected.Length, sdLog, cc);
-                double landUcl = LandExact.LandUcl(meanLog, sdLog, detected.Length, cc);
-                var land = sheet.AddSection("land h-ucl (lognormal, historical)");
-                land.ColumnsAre("quantity", "value", "reference");
-                land.AddRow($"Land H factor ({cc * 100:G4}%)", F(hLand),
-                    "exact (Land 1975; polar integration of the conditional t)");
-                land.AddRow($"{cc * 100:G4}% Land H-UCL", F(landUcl), "TG eq. 2-36");
+                (sheet, summary) = BuildUclSheet(s, detected, cc, boot, seed, spec.File, fileHash, Warn);
             }
-            catch (Exception ex) when (ex is ArgumentException or OverflowException)
+            catch (Exception ex) when (ex is ArgumentException or ArithmeticException or InvalidOperationException)
             {
-                Warn($"MVUE lognormal: {ex.Message}");
-            }
-
-            var rec = sheet.AddSection("recommendation");
-            rec.ColumnsAre("recommended UCL", "rationale");
-            rec.AddRow(recommended ?? "none", rationale);
-
-            if (un is not null)
-            {
-                var ndSec = sheet.AddSection("ucls accounting for nondetects");
-                    ndSec.ColumnsAre("method", "UCL", "reference");
-                    ndSec.AddRow("KM (t)", F(un.KmT), "KM mean + t * SE (TG eq. 4-1..4-2)");
-                    ndSec.AddRow("KM (z)", F(un.KmZ), "KM mean + z * SE");
-                    ndSec.AddRow("KM (Chebyshev)", F(un.KmChebyshev), "TG eq. 2-46 on KM estimates; not recommended by ProUCL 5.2");
-                    ndSec.AddRow("KM percentile bootstrap", F(un.KmPercentileBootstrap), "bootstrap of observation pairs, seed " + seed);
-                    ndSec.AddRow("KM BCA bootstrap", F(un.KmBcaBootstrap), "TG eq. 2-58..2-61 on KM means");
-                    ndSec.AddRow("KM bootstrap-t", F(un.KmBootstrapT), "TG 4.7 bootstrap-t on KM mean/SE");
-                    if (un.LrosT > 0)
-                    {
-                        ndSec.AddRow("LROS (t)", F(un.LrosT), "t-UCL on LROS-imputed data set");
-                        ndSec.AddRow("LROS percentile bootstrap", F(un.LrosPercentileBootstrap), "percentile bootstrap on LROS data");
-                    }
-                    if (un.GrosT > 0)
-                    {
-                        ndSec.AddRow("GROS (t)", F(un.GrosT), "t-UCL on GROS-imputed data set");
-                        if (!double.IsNaN(un.GrosGammaAdjusted))
-                            ndSec.AddRow("GROS gamma adjusted", F(un.GrosGammaAdjusted), "TG eq. 2-35 on GROS data (n<=50)");
-                        if (!double.IsNaN(un.GrosGammaApproximate))
-                            ndSec.AddRow("GROS gamma approximate", F(un.GrosGammaApproximate), "TG eq. 2-34 on GROS data");
-                    }
-                    ndSec.AddNote("when detected data are gamma, ProUCL recommends gamma UCLs on the GROS data set (TG example 4-4); " +
-                                  "when normal, the KM (t) UCL. DL/2-based UCLs are available but not recommended (TG section 4.2.3).");
+                Warn($"series skipped: {ex.Message}");
+                batch?.AddFailureRow(WarningsCell(), s.PointId, s.Parameter, nCell, ndCell, ndPct);
+                continue;
             }
 
             if (batch is null) Console.Write(sheet.RenderText());
-            else batch.WriteSheet(s.PointId, s.Parameter, sheet.RenderText());
-
-            if (batch is not null)
+            else
             {
-                var st = Descriptive.Compute(detected);
-                string ndPct = s.N > 0 ? (100.0 * s.NondetectCount / s.N).ToString("G4", CultureInfo.InvariantCulture) : "0";
-                string gofTag = gammaPass ? "gamma"
-                    : normalPass ? (normalConclusion == GofConclusion.Normal ? "normal" : "approx. normal")
-                    : "no fit";
-                batch.AddRow(s.PointId, s.Parameter, s.N.ToString(CultureInfo.InvariantCulture),
-                    s.NondetectCount.ToString(CultureInfo.InvariantCulture), ndPct,
-                    BatchRun.Num(st.Min), BatchRun.Num(st.Max), BatchRun.Num(st.Median),
-                    BatchRun.Num(st.Mean), BatchRun.Num(st.StandardDeviation),
-                    BatchRun.Num(un?.KmMean), BatchRun.Num(un?.KmSd),
-                    gofTag, recMethod ?? "", BatchRun.Num(recValue),
-                    BatchRun.Num(u.StudentT), BatchRun.Num(u.GammaAdjusted), BatchRun.Num(un?.KmT),
-                    WarningsCell());
+                batch.WriteSheet(s.PointId, s.Parameter, sheet.RenderText());
+                batch.AddRow(summary.Append(WarningsCell()).ToArray());
             }
             series++;
         }
@@ -826,6 +621,316 @@ internal static class Program
         }
         return 0;
     }
+
+    /// <summary>
+    /// Builds the UCL sheet of one series and its summary cells (without the
+    /// trailing warnings cell). The recommendation follows the ProUCL 5.2
+    /// decision flowcharts (TG Appendix C, <see cref="UclDecision"/>); the GOF
+    /// section shows the tests at the user's alpha, the decision uses the fixed
+    /// levels of the flowcharts (normal 0.01, gamma 0.05, lognormal 0.10).
+    /// </summary>
+    private static (ReportSheet Sheet, string[] Summary) BuildUclSheet(SeriesRecord s, double[] detected,
+        double cc, int boot, ulong seed, string file, string fileHash, Action<string> warn)
+    {
+        double alpha = 1.0 - cc;
+        bool hasNd = s.NondetectCount > 0;
+        bool identical = detected.Min() == detected.Max();
+        bool positive = detected.All(v => v > 0);
+
+        // Full-data suite on the detected values. Without NDs a degenerate data set
+        // fails the whole series; with NDs only this part is dropped (KM still works).
+        UclResult? u = null;
+        try { u = Ucl.Compute(detected, cc, boot, seed); }
+        catch (ArgumentException ex) when (hasNd) { warn($"detected-data UCLs: {ex.Message}"); }
+
+        UclWithNdResult? un = null;
+        if (hasNd)
+        {
+            try { un = UclWithNd.Compute(s.Observations, cc, boot, seed); }
+            catch (ArgumentException ex) { warn($"ND UCLs: {ex.Message}"); }
+        }
+
+        // Lognormal quantities of the detected data (historical methods, H-UCL).
+        double[]? logs = positive && !identical ? detected.Select(v => Math.Log(v)).ToArray() : null;
+        double meanLog = double.NaN, sdLog = double.NaN, hLand = double.NaN, landUcl = double.NaN;
+        if (logs is not null)
+        {
+            meanLog = logs.Average();
+            double ml = meanLog;
+            sdLog = Math.Sqrt(logs.Sum(v => (v - ml) * (v - ml)) / (logs.Length - 1));
+            if (detected.Length >= 4 && sdLog > 0)
+            {
+                try
+                {
+                    hLand = LandExact.LandCriticalH(detected.Length, sdLog, cc);
+                    landUcl = LandExact.LandUcl(meanLog, sdLog, detected.Length, cc);
+                }
+                catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
+                {
+                    warn($"Land H-UCL: {ex.Message}");
+                }
+            }
+        }
+
+        // ---- ProUCL 5.2 decision (TG Appendix C) ----
+        var decisionGof = UclDecision.EvaluateGof(detected);
+        var rec = UclDecision.Recommend(cc, s.N, hasNd, decisionGof, new UclCandidates
+        {
+            StudentT = u?.StudentT ?? double.NaN,
+            AdjustedGamma = u?.GammaAdjusted ?? double.NaN,
+            ApproximateGamma = u?.GammaApproximate ?? double.NaN,
+            HUcl = landUcl,
+            KmT = un?.KmT ?? double.NaN,
+            KmBca = un?.KmBcaBootstrap ?? double.NaN,
+            KmBootstrapT = un?.KmBootstrapT ?? double.NaN,
+            KmHUcl = un?.KmHUcl ?? double.NaN,
+            KmAdjustedGamma = un?.KmGammaAdjusted ?? double.NaN,
+            KmApproximateGamma = un?.KmGammaApproximate ?? double.NaN,
+            GrosAdjustedGamma = un?.GrosGammaAdjusted ?? double.NaN,
+            GrosApproximateGamma = un?.GrosGammaApproximate ?? double.NaN,
+        });
+        var suggested = rec.Suggestions.Select(x => x.Method).ToHashSet();
+        void Row(ReportSheet.Section sec, UclMethod? method, params string[] cells)
+        {
+            if (method is UclMethod m && suggested.Contains(m)) sec.AddRowHighlighted(cells);
+            else sec.AddRow(cells);
+        }
+
+        var sheet = new ReportSheet($"OpenUCL {Version} — UCL / EPC ESTIMATION ({cc * 100:G4}% confidence)");
+        sheet.Header.Add(("input", $"{file} (sha256 {fileHash})"));
+        sheet.Header.Add(("series", $"{s.PointId} / {s.Parameter}    n = {s.N}    detects = {detected.Length}    ND = {s.NondetectCount}{(s.N > 0 ? $" ({100.0 * s.NondetectCount / s.N:G4}%)" : "")}"));
+        sheet.Header.Add(("options", $"bootstrap runs = {boot}, seed = {seed}"));
+        sheet.Header.Add(("generated", DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm 'UTC'", CultureInfo.InvariantCulture)));
+
+        var sum = sheet.AddSection("summary statistics");
+        sum.ColumnsAre("statistic", "value");
+        if (u is not null)
+        {
+            sum.AddRow("mean (detected)", F(u.Mean));
+            sum.AddRow("sd (detected)", F(u.StandardDeviation));
+            sum.AddRow("skewness k3-hat", F(u.Skewness));
+        }
+        else
+        {
+            sum.AddRow("mean (detected)", F(detected.Average()));
+            sum.AddNote("all detected values are identical: the UCLs of the detected data are not defined; " +
+                        "the nondetect-aware UCLs below are computed on the full data set.");
+        }
+        if (logs is not null) sum.AddRow("sd of ln(detected)", F(sdLog));
+
+        // ---- GOF at the user's alpha (display) ----
+        var gof = sheet.AddSection("goodness of fit (detected observations)");
+        gof.ColumnsAre("test", "statistic", "critical / p", "conclusion");
+        GammaGofResult? gg = null;
+        double gofGammaAlpha = SnapAlpha(alpha);
+        if (identical)
+        {
+            gof.AddNote("all detected values are identical: goodness-of-fit tests are not defined.");
+        }
+        else
+        {
+            var normalC = GofRows(gof, detected, alpha, "");
+            string lognC = "not applicable (non-positive values)";
+            if (logs is not null) lognC = ConclusionText(GofRows(gof, logs, alpha, "lognormal "));
+            string gammaC = "not applicable";
+            if (u is { GammaApplicable: true })
+            {
+                try
+                {
+                    gg = GammaGof.Compute(detected);
+                    double adCrit = gg.CriticalValue(GammaGofTest.AndersonDarling, gofGammaAlpha);
+                    double ksCrit = gg.CriticalValue(GammaGofTest.KolmogorovSmirnov, gofGammaAlpha);
+                    bool ad = gg.AD_A2 <= adCrit, ks = gg.KS_D <= ksCrit;
+                    gof.AddRow("Gamma A-D (SSI 2002)", $"A2 = {F(gg.AD_A2)}", F(adCrit), ad ? "pass" : "fail");
+                    gof.AddRow("Gamma K-S (SSI 2002)", $"D = {F(gg.KS_D)}", F(ksCrit), ks ? "pass" : "fail");
+                    gammaC = (ad, ks) switch { (true, true) => "yes", (false, false) => "no", _ => "approximate (one of two tests)" };
+                }
+                catch (ArgumentException ex) { warn($"gamma GOF: {ex.Message}"); gg = null; }
+            }
+            gof.AddNote($"at alpha {alpha:G2}: normal {ConclusionText(normalC)}; lognormal {lognC}; gamma {gammaC} " +
+                        "(one passing test of two = approximate, ProUCL 5.2).");
+            double lfAlpha = LillieforsResult.TabulatedAlpha(alpha);
+            if (Math.Abs(lfAlpha - alpha) > 1e-9)
+                gof.AddNote($"Lilliefors critical values at the tabulated level {lfAlpha:G2} (factors exist for 0.01/0.05/0.10/0.20).");
+            if (gg is not null && Math.Abs(gofGammaAlpha - alpha) > 1e-9)
+                gof.AddNote($"gamma critical values at the tabulated level {gofGammaAlpha:G2} (TG Appendix A: 0.10/0.05/0.01).");
+        }
+
+        if (gg is not null && u is not null)
+        {
+            var gam = sheet.AddSection("gamma parameters (MLE on detected data)");
+            gam.ColumnsAre("parameter", "value");
+            gam.AddRow("k-hat (MLE)", F(u.KHat));
+            gam.AddRow("k-star (bias corrected)", F(u.KStar));
+            gam.AddRow("theta-hat (MLE)", F(u.ThetaHat));
+            gam.AddRow("theta-star (bias corrected)", F(u.ThetaStar));
+            gam.AddRow($"chi-square ({alpha:G2})", F(u.ChiSquareApprox));
+            if (Ucl.AdjustedGammaSupported(alpha))
+            {
+                gam.AddRow($"adjusted significance beta ({alpha:G2})", F(u.BetaAdjusted));
+                gam.AddRow("adjusted chi-square (beta)", F(u.ChiSquareAdjusted));
+            }
+            else
+            {
+                gam.AddNote($"adjusted gamma UCL not available at {cc * 100:G4}% confidence: ProUCL supports it " +
+                            "at 90%, 95% and 99% only (TG section 2.4, table 2-2).");
+            }
+        }
+
+        if (u is not null)
+        {
+            var ucls = sheet.AddSection($"ucls / epcs ({cc * 100:G4}% confidence)");
+            ucls.ColumnsAre("method", "UCL", "reference");
+            Row(ucls, UclMethod.StudentT, "Student's t", F(u.StudentT), "TG eq. 2-32");
+            Row(ucls, null, "modified-t (Johnson)", F(u.ModifiedT), "TG eq. 2-37");
+            Row(ucls, null, "jackknife", F(u.Jackknife), "equals the t-UCL for a mean");
+            Row(ucls, null, "CLT", F(u.Clt), "TG eq. 2-40");
+            Row(ucls, null, "adjusted CLT (Chen)", F(u.AdjustedClt), "TG eq. 2-42");
+            Row(ucls, null, "Chebyshev (mean, sd)", F(u.ChebyshevMeanSd), "TG eq. 2-46; not recommended by ProUCL 5.2");
+            if (gg is not null && !double.IsNaN(u.GammaApproximate))
+            {
+                Row(ucls, UclMethod.ApproximateGamma, "gamma approximate", F(u.GammaApproximate), "TG eq. 2-34 (use when n>=50)");
+                if (!double.IsNaN(u.GammaAdjusted))
+                    Row(ucls, UclMethod.AdjustedGamma, "gamma adjusted", F(u.GammaAdjusted), "TG eq. 2-35 (use when n<50)");
+            }
+            Row(ucls, null, "standard bootstrap", F(u.StandardBootstrap), $"TG eq. 2-56 (seed {seed})");
+            Row(ucls, null, "percentile bootstrap", F(u.PercentileBootstrap), "TG eq. 2-57");
+            Row(ucls, null, "BCA bootstrap", F(u.BcaBootstrap), "TG eq. 2-58..2-61");
+            Row(ucls, null, "bootstrap-t", F(u.BootstrapT), "TG eq. 2-62");
+            Row(ucls, null, "Hall's bootstrap", F(LognormalHistorical.HallBootstrap(detected, cc, boot, seed)), "TG eq. 2-63..2-64");
+
+            if (logs is not null)
+            {
+                try
+                {
+                    var (mvueMean, mvueSd) = LognormalHistorical.Mvue(meanLog, sdLog, detected.Length);
+                    double mvueSe = LognormalHistorical.MvueSe(meanLog, sdLog, detected.Length);
+                    Row(ucls, null, "MVUE mean (lognormal)", F(mvueMean), "TG eq. 2-14 (Finney/Bradu-Mundlak)");
+                    Row(ucls, null, "MVUE sd (lognormal)", F(mvueSd), "TG eq. 2-15");
+                    Row(ucls, null, "MVUE SE (lognormal)", F(mvueSe), "TG eq. 2-16 (SE of the MVUE mean)");
+                    var mv = sheet.AddSection("chebyshev on mvue (lognormal, historical)");
+                    mv.ColumnsAre("confidence", "UCL", "reference");
+                    foreach (var level in new[] { 0.90, 0.95, 0.975, 0.99 })
+                        mv.AddRow($"{level * 100:G4}% Chebyshev (MVUE)",
+                            F(LognormalHistorical.ChebyshevMvueUcl(mvueMean, mvueSe, level)),
+                            "TG eq. 2-47 (MVUE mean + SE); not recommended by ProUCL 5.2");
+                }
+                catch (Exception ex) when (ex is ArgumentException or OverflowException)
+                {
+                    warn($"MVUE lognormal: {ex.Message}");
+                }
+
+                // Land's H-UCL (TG eq. 2-36): H exact by polar integration of the
+                // conditional-t density; ProUCL interpolates Land's (1975) tables
+                // (90%/95% only), +3.6%/+5.3% on silver n = 55/56 (decision #45).
+                var land = sheet.AddSection("land h-ucl (lognormal)");
+                land.ColumnsAre("quantity", "value", "reference");
+                land.AddRow($"Land H factor ({cc * 100:G4}%)", F(hLand),
+                    "exact (Land 1975; polar integration of the conditional t)");
+                Row(land, UclMethod.HUcl, $"{cc * 100:G4}% Land H-UCL", F(landUcl), "TG eq. 2-36");
+            }
+            else
+            {
+                ucls.AddNote("lognormal methods (MVUE, Chebyshev-MVUE, H-UCL) not applicable: non-positive detected values.");
+            }
+        }
+
+        var recSec = sheet.AddSection("recommendation");
+        recSec.ColumnsAre("recommended UCL", "rationale");
+        if (rec.Primary is null) recSec.AddRow("none", rec.Rationale);
+        else
+        {
+            recSec.AddRow($"{rec.Primary.Label} UCL = {F(rec.Primary.Value)}", rec.Rationale);
+            foreach (var alt in rec.Suggestions.Skip(1))
+                recSec.AddRow($"or {alt.Label} UCL = {F(alt.Value)}", "alternative suggested by the same flowchart branch");
+        }
+        recSec.AddNote($"decision GOF on the detected data at the flowchart levels (TG Appendix C): " +
+                       $"normal at 0.01 {YesNo(decisionGof.Normal)}, gamma at 0.05 {YesNo(decisionGof.Gamma)}, " +
+                       $"lognormal at 0.10 {YesNo(decisionGof.Lognormal)}; n = {s.N}" +
+                       $"{(double.IsNaN(decisionGof.KHat) ? "" : $", k-hat = {F(decisionGof.KHat)}, k* = {F(decisionGof.KStar)}")}" +
+                       $"{(double.IsNaN(decisionGof.SdLog) ? "" : $", sd(log) = {F(decisionGof.SdLog)}")}.");
+
+        if (un is not null)
+        {
+            var ndSec = sheet.AddSection("ucls accounting for nondetects");
+            ndSec.ColumnsAre("method", "UCL", "reference");
+            Row(ndSec, UclMethod.KmT, "KM (t)", F(un.KmT), "KM mean + t * SE (TG eq. 4-1..4-2)");
+            Row(ndSec, null, "KM (z)", F(un.KmZ), "KM mean + z * SE");
+            Row(ndSec, null, "KM (Chebyshev)", F(un.KmChebyshev), "TG eq. 2-46 on KM estimates; not recommended by ProUCL 5.2");
+            Row(ndSec, null, "KM percentile bootstrap", F(un.KmPercentileBootstrap), "bootstrap of observation pairs, seed " + seed);
+            Row(ndSec, UclMethod.KmBca, "KM BCA bootstrap", F(un.KmBcaBootstrap), "TG eq. 2-58..2-61 on KM means");
+            Row(ndSec, UclMethod.KmBootstrapT, "KM bootstrap-t", F(un.KmBootstrapT), "TG 4.7 bootstrap-t on KM mean/SE");
+            if (!double.IsNaN(un.KmGammaApproximate))
+            {
+                Row(ndSec, null, "k-hat (KM)", F(un.KmGammaK), $"KM mean^2 / KM variance (TG 4.6.2); nu = {F(un.KmGammaNu)}");
+                Row(ndSec, UclMethod.KmApproximateGamma, "KM gamma approximate", F(un.KmGammaApproximate), "TG eq. 2-34 on KM estimates (use when n>=50)");
+                if (!double.IsNaN(un.KmGammaAdjusted))
+                    Row(ndSec, UclMethod.KmAdjustedGamma, "KM gamma adjusted", F(un.KmGammaAdjusted), "TG eq. 2-35 on KM estimates (use when n<50)");
+            }
+            if (!double.IsNaN(un.KmHUcl))
+                Row(ndSec, UclMethod.KmHUcl, "KM H-UCL", F(un.KmHUcl),
+                    $"TG eq. 2-36 on KM of ln(x): mean {F(un.KmLogMean)}, sd {F(un.KmLogSd)}, H exact {F(un.KmH)}");
+            if (un.LrosT > 0)
+            {
+                Row(ndSec, null, "LROS (t)", F(un.LrosT), "t-UCL on LROS-imputed data set");
+                Row(ndSec, null, "LROS percentile bootstrap", F(un.LrosPercentileBootstrap), "percentile bootstrap on LROS data");
+            }
+            if (un.GrosT > 0)
+            {
+                Row(ndSec, null, "GROS (t)", F(un.GrosT), "t-UCL on GROS-imputed data set");
+                if (!double.IsNaN(un.GrosGammaApproximate))
+                    Row(ndSec, UclMethod.GrosApproximateGamma, "GROS gamma approximate", F(un.GrosGammaApproximate), "TG eq. 2-34 on GROS data (use when n>=50)");
+                if (!double.IsNaN(un.GrosGammaAdjusted))
+                    Row(ndSec, UclMethod.GrosAdjustedGamma, "GROS gamma adjusted", F(un.GrosGammaAdjusted), "TG eq. 2-35 on GROS data (use when n<50)");
+            }
+            ndSec.AddNote("ProUCL 5.2 decision logic with NDs (TG Appendix C): normal detects -> KM (t); gamma -> KM/GROS gamma " +
+                          "UCLs by k* and n (Figure C-4); lognormal -> KM H-UCL or KM (t)/KM BCA (Figure C-5); otherwise KM (t). " +
+                          "DL/2-based UCLs are not recommended (TG section 4.2.3).");
+        }
+
+        var st = Descriptive.Compute(detected);
+        var summary = new[]
+        {
+            s.PointId, s.Parameter, s.N.ToString(CultureInfo.InvariantCulture),
+            s.NondetectCount.ToString(CultureInfo.InvariantCulture),
+            s.N > 0 ? (100.0 * s.NondetectCount / s.N).ToString("G4", CultureInfo.InvariantCulture) : "0",
+            BatchRun.Num(st.Min), BatchRun.Num(st.Max), BatchRun.Num(st.Median),
+            BatchRun.Num(st.Mean), BatchRun.Num(st.N > 1 ? st.StandardDeviation : double.NaN),
+            BatchRun.Num(un?.KmMean), BatchRun.Num(un?.KmSd),
+            rec.Distribution, rec.Primary?.Label ?? "", BatchRun.Num(rec.Primary?.Value),
+            BatchRun.Num(u?.StudentT), BatchRun.Num(u?.GammaAdjusted), BatchRun.Num(un?.KmT),
+        };
+        return (sheet, summary);
+    }
+
+    /// <summary>Shapiro-Wilk (n &lt;= 2000, ProUCL range) and Lilliefors rows on one scale.</summary>
+    private static GofConclusion GofRows(ReportSheet.Section gof, double[] data, double alpha, string prefix)
+    {
+        ShapiroWilkResult? sw = null;
+        if (data.Length <= GoodnessOfFit.ShapiroWilkProUclMaxN)
+        {
+            sw = GoodnessOfFit.ShapiroWilk(data);
+            gof.AddRow($"{prefix}Shapiro-Wilk (AS R94)", $"W = {F(sw.W)}",
+                $"p = {(sw.PValue < 1e-4 ? "<1e-4" : F(sw.PValue))}", sw.W >= sw.CriticalValue(alpha) ? "pass" : "fail");
+        }
+        else
+        {
+            gof.AddRow($"{prefix}Shapiro-Wilk (AS R94)", "-", "-", "not performed for n > 2000 (ProUCL, TG 2.2.1.2)");
+        }
+        var lf = GoodnessOfFit.Lilliefors(data);
+        gof.AddRow($"{prefix}Lilliefors K-S", $"D = {F(lf.D)}", F(lf.CriticalValue(alpha)),
+            lf.D <= lf.CriticalValue(alpha) ? "pass" : "fail");
+        return GoodnessOfFit.Conclude(sw, lf, alpha);
+    }
+
+    private static string ConclusionText(GofConclusion c) => c switch
+    {
+        GofConclusion.Normal => "yes",
+        GofConclusion.ApproximatelyNormal => "approximate (one of two tests)",
+        _ => "no",
+    };
+
+    private static string YesNo(bool b) => b ? "yes" : "no";
 
     private static double SnapAlpha(double alpha) =>
         alpha <= 0.02 ? 0.01 : alpha <= 0.075 ? 0.05 : 0.10;
@@ -890,125 +995,133 @@ internal static class Program
             if (values.Length < 3)
             {
                 Warn("fewer than 3 detects, BTVs skipped");
-                batch?.AddRow(new[]
-                {
-                    s.PointId, s.Parameter, s.N.ToString(CultureInfo.InvariantCulture),
+                batch?.AddFailureRow(WarningsCell(), s.PointId, s.Parameter, s.N.ToString(CultureInfo.InvariantCulture),
                     s.NondetectCount.ToString(CultureInfo.InvariantCulture),
-                    s.N > 0 ? (100.0 * s.NondetectCount / s.N).ToString("G4", CultureInfo.InvariantCulture) : "0",
-                    "", "", "", "", "", "", "", "", "", "", "", WarningsCell()
-                });
+                    s.N > 0 ? (100.0 * s.NondetectCount / s.N).ToString("G4", CultureInfo.InvariantCulture) : "0");
                 continue;
             }
-            var b = Btv.Compute(values, cc, coverage, k);
-            var sheet = new ReportSheet($"OpenUCL {Version} — BACKGROUND THRESHOLD VALUES ({cc * 100:G4}% confidence, {coverage * 100:G4}% coverage)");
-            sheet.Header.Add(("input", $"{spec.File} (sha256 {fileHash})"));
-            sheet.Header.Add(("series", $"{s.PointId} / {s.Parameter}    n = {s.N}    detects = {values.Length}    ND = {s.NondetectCount}"));
-            sheet.Header.Add(("options", $"future k = {k} (Bonferroni UPLk)"));
-            sheet.Header.Add(("generated", DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm 'UTC'", CultureInfo.InvariantCulture)));
-
-            var pct = sheet.AddSection("upper percentiles");
-            pct.ColumnsAre("percentile", "value", "reference");
-            pct.AddRow($"{coverage * 100:G4}% nonparametric", F(b.PercentileNonparametric), "TG eq. 3-1 (p*n, Excel-style)");
-            pct.AddRow("normal", F(b.PercentileNormal), "TG eq. 3-2");
-            if (b.LognormalApplicable) pct.AddRow("lognormal", F(b.PercentileLognormal), "TG eq. 3-3");
-            if (b.GammaApplicable) pct.AddRow("gamma (MLE)", F(b.PercentileGamma), "TG eq. 3-5");
-
-            var upl = sheet.AddSection("upper prediction limits");
-            upl.ColumnsAre("limit", "value", "reference");
-            upl.AddRow($"UPL1 normal", F(b.UplNormal1), "TG eq. 3-13");
-            upl.AddRow($"UPL{b.FutureK} normal (Bonferroni)", F(b.UplNormalK), "TG eq. 3-18");
-            upl.AddRow($"UPL{b.FutureK} mean of k, normal", F(b.UplNormalKMean), "t(1-a) * s * sqrt(1/k + 1/n)");
-            if (b.LognormalApplicable) upl.AddRow("UPL1 lognormal", F(b.UplLognormal1), "TG eq. 3-14");
-            if (b.GammaApplicable)
+            // One degenerate series must never stop the batch (audit 2026-11-18 [E1]).
+            try
             {
-                upl.AddRow("UPL1 gamma WH", F(b.UplGammaWh), "TG eq. 3-15 (cube-root scale)");
-                upl.AddRow("UPL1 gamma HW", F(b.UplGammaHw), "TG eq. 3-16 (fourth-root scale)");
-            }
-            upl.AddRow("UPL1 nonparametric", F(b.UplNonparametric), "TG eq. 3-17");
-            upl.AddRow("UPL1 Chebyshev", F(b.UplChebyshev), "TG section 3.5.4.1; conservative");
+                var b = Btv.Compute(values, cc, coverage, k);
+                var sheet = new ReportSheet($"OpenUCL {Version} — BACKGROUND THRESHOLD VALUES ({cc * 100:G4}% confidence, {coverage * 100:G4}% coverage)");
+                sheet.Header.Add(("input", $"{spec.File} (sha256 {fileHash})"));
+                sheet.Header.Add(("series", $"{s.PointId} / {s.Parameter}    n = {s.N}    detects = {values.Length}    ND = {s.NondetectCount}"));
+                sheet.Header.Add(("options", $"future k = {k} (Bonferroni UPLk)"));
+                sheet.Header.Add(("generated", DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm 'UTC'", CultureInfo.InvariantCulture)));
 
-            var utl = sheet.AddSection("upper tolerance limits");
-            utl.ColumnsAre("limit", "value", "reference");
-            utl.AddRow("tolerance factor K", F(b.ToleranceFactorK), "exact noncentral-t (computed, not tabled)");
-            utl.AddRow($"UTL{cc * 100:G4}-{coverage * 100:G4} normal", F(b.UtlNormal), "TG eq. 3-6");
-            if (b.LognormalApplicable) utl.AddRow($"UTL{cc * 100:G4}-{coverage * 100:G4} lognormal", F(b.UtlLognormal), "TG eq. 3-7");
-            if (b.GammaApplicable)
-            {
-                utl.AddRow($"UTL gamma WH", F(b.UtlGammaWh), "TG section 3.4.3 (cube-root scale)");
-                utl.AddRow($"UTL gamma HW", F(b.UtlGammaHw), "TG section 3.4.3 (fourth-root scale)");
-            }
-            utl.AddRow($"UTL nonparametric (order r = {b.UtlNonparametricOrder})", F(b.UtlNonparametric),
-                $"achieved CC = {F(b.UtlAchievedCC)} (TG eq. binomial coverage)");
+                var pct = sheet.AddSection("upper percentiles");
+                pct.ColumnsAre("percentile", "value", "reference");
+                pct.AddRow($"{coverage * 100:G4}% nonparametric", F(b.PercentileNonparametric), "TG eq. 3-1 (p*n, Excel-style)");
+                pct.AddRow("normal", F(b.PercentileNormal), "TG eq. 3-2");
+                if (b.LognormalApplicable) pct.AddRow("lognormal", F(b.PercentileLognormal), "TG eq. 3-3");
+                if (b.GammaApplicable) pct.AddRow("gamma (MLE)", F(b.PercentileGamma), "TG eq. 3-5");
 
-            var usl = sheet.AddSection("upper simultaneous limits");
-            usl.ColumnsAre("limit", "value", "reference");
-            usl.AddRow("d2max (for USL)", F(b.D2Max), "Singh (1993) max-MD critical, closed form (Grubbs 1950)");
-            usl.AddRow("USL normal", F(b.UslNormal), "TG eq. 3-20");
-            if (b.LognormalApplicable) usl.AddRow("USL lognormal", F(b.UslLognormal), "TG eq. 3-21");
-            if (b.GammaApplicable)
-            {
-                usl.AddRow("USL gamma WH", F(b.UslGammaWh), "TG section 3.6 (cube-root scale)");
-                usl.AddRow("USL gamma HW", F(b.UslGammaHw), "TG section 3.6 (fourth-root scale)");
-            }
-            usl.AddRow("USL nonparametric (max)", F(b.UslNonparametric), "TG section 3.6; use only on outlier-free single populations");
-
-            BtvNdResult? bn = null;
-            if (s.NondetectCount > 0)
-            {
-                try
+                var upl = sheet.AddSection("upper prediction limits");
+                upl.ColumnsAre("limit", "value", "reference");
+                upl.AddRow($"UPL1 normal", F(b.UplNormal1), "TG eq. 3-13");
+                upl.AddRow($"UPL{b.FutureK} normal (Bonferroni)", F(b.UplNormalK), "TG eq. 3-18");
+                upl.AddRow($"UPL{b.FutureK} mean of k, normal", F(b.UplNormalKMean), "t(1-a) * s * sqrt(1/k + 1/n)");
+                if (b.LognormalApplicable) upl.AddRow("UPL1 lognormal", F(b.UplLognormal1), "TG eq. 3-14");
+                if (b.GammaApplicable)
                 {
-                    bn = BtvWithNd.Compute(s.Observations, cc, coverage, k);
-                    var ndSec = sheet.AddSection("btvs accounting for nondetects (KM estimates)");
-                    ndSec.ColumnsAre("limit", "value", "reference");
-                    ndSec.AddRow("KM mean / sd", F(bn.KmMean), "TG eq. 4-1..4-3");
-                    ndSec.AddRow($"UPL1 normal-KM", F(bn.UplNormal1), "TG eq. 5-1");
-                    ndSec.AddRow($"UPL{b.FutureK} normal-KM (Bonferroni)", F(bn.UplNormalK), "TG 3.5.5 on KM estimates");
-                    ndSec.AddRow($"UPL{b.FutureK} mean of k, normal-KM", F(bn.UplNormalKMean), "t(1-a) * KM sd * sqrt(1/k + 1/n)");
-                    ndSec.AddRow("UPL1 Chebyshev-KM", F(bn.UplChebyshev), "TG eq. 5-2; conservative");
-                    if (b.LognormalApplicable)
-                    {
-                        ndSec.AddRow("percentile normal-KM", F(bn.PercentileNormal), "TG eq. 5-3");
-                        ndSec.AddRow("percentile lognormal-KM", F(bn.PercentileLognormal), "TG 5.3.2.2");
-                        ndSec.AddRow("UTL95-95 normal-KM", F(bn.UtlNormal), "TG eq. 5-4");
-                        ndSec.AddRow("UTL95-95 lognormal-KM", F(bn.UtlLognormal), "TG 5.3.3.2");
-                    }
-                    if (b.GammaApplicable)
-                    {
-                        ndSec.AddRow("percentile gamma-KM (chi-square)", F(bn.PercentileGammaChi), "TG 5.3.2.3 chi-square route (what ProUCL prints)");
-                        ndSec.AddRow("percentile gamma WH-KM", F(bn.PercentileGammaWh), "WH approximation (cube-root scale)");
-                        ndSec.AddRow("percentile gamma HW-KM", F(bn.PercentileGammaHw), "HW approximation (fourth-root scale)");
-                        ndSec.AddRow("UTL gamma WH-KM", F(bn.UtlGammaWh), "TG 5.3.3.3 (cube-root scale)");
-                        ndSec.AddRow("UTL gamma HW-KM", F(bn.UtlGammaHw), "TG 5.3.3.3 (fourth-root scale)");
-                    }
-                    ndSec.AddRow($"d2max (for USL, n = {bn.N})", F(bn.D2Max), "Singh (1993) max-MD critical, closed form (Grubbs 1950)");
-                    ndSec.AddRow("USL normal-KM", F(bn.UslNormal), "TG 5.3.4.1");
-                    if (bn.LognormalApplicable) ndSec.AddRow("USL lognormal-KM", F(bn.UslLognormal), "TG 5.3.4.2");
-                    if (bn.GammaApplicable)
-                    {
-                        ndSec.AddRow("USL gamma WH-KM", F(bn.UslGammaWh), "TG 5.3.4.3 (cube-root scale)");
-                        ndSec.AddRow("USL gamma HW-KM", F(bn.UslGammaHw), "TG 5.3.4.3 (fourth-root scale)");
-                    }
-                    ndSec.AddRow("USL nonparametric (max)", F(bn.UslNonparametric), "TG 5.3.4.4; use only on outlier-free single populations");
-                    ndSec.AddNote("KM on transformed scale: detects and NDs (at their DL) are all transformed before the KM (TG 5.3.x). " +
-                                  "gamma-KM percentile: chi-square route (TG 5.3.2.3) - ProUCL-consistent within 0.5% (k-hat estimation detail).");
+                    upl.AddRow("UPL1 gamma WH", F(b.UplGammaWh), "TG eq. 3-15 (cube-root scale)");
+                    upl.AddRow("UPL1 gamma HW", F(b.UplGammaHw), "TG eq. 3-16 (fourth-root scale)");
                 }
-                catch (ArgumentException ex) { Warn($"BTV-ND: {ex.Message}"); }
+                upl.AddRow("UPL1 nonparametric", F(b.UplNonparametric), "TG eq. 3-17");
+                upl.AddRow("UPL1 Chebyshev", F(b.UplChebyshev), "TG section 3.5.4.1; conservative");
+
+                var utl = sheet.AddSection("upper tolerance limits");
+                utl.ColumnsAre("limit", "value", "reference");
+                utl.AddRow("tolerance factor K", F(b.ToleranceFactorK), "exact noncentral-t (computed, not tabled)");
+                utl.AddRow($"UTL{cc * 100:G4}-{coverage * 100:G4} normal", F(b.UtlNormal), "TG eq. 3-6");
+                if (b.LognormalApplicable) utl.AddRow($"UTL{cc * 100:G4}-{coverage * 100:G4} lognormal", F(b.UtlLognormal), "TG eq. 3-7");
+                if (b.GammaApplicable)
+                {
+                    utl.AddRow($"UTL gamma WH", F(b.UtlGammaWh), "TG section 3.4.3 (cube-root scale)");
+                    utl.AddRow($"UTL gamma HW", F(b.UtlGammaHw), "TG section 3.4.3 (fourth-root scale)");
+                }
+                utl.AddRow($"UTL nonparametric (order r = {b.UtlNonparametricOrder})", F(b.UtlNonparametric),
+                    $"achieved CC = {F(b.UtlAchievedCC)} (TG eq. binomial coverage)");
+
+                var usl = sheet.AddSection("upper simultaneous limits");
+                usl.ColumnsAre("limit", "value", "reference");
+                usl.AddRow("d2max (for USL)", F(b.D2Max), "Singh (1993) max-MD critical, closed form (Grubbs 1950)");
+                usl.AddRow("USL normal", F(b.UslNormal), "TG eq. 3-20");
+                if (b.LognormalApplicable) usl.AddRow("USL lognormal", F(b.UslLognormal), "TG eq. 3-21");
+                if (b.GammaApplicable)
+                {
+                    usl.AddRow("USL gamma WH", F(b.UslGammaWh), "TG section 3.6 (cube-root scale)");
+                    usl.AddRow("USL gamma HW", F(b.UslGammaHw), "TG section 3.6 (fourth-root scale)");
+                }
+                usl.AddRow("USL nonparametric (max)", F(b.UslNonparametric), "TG section 3.6; use only on outlier-free single populations");
+
+                BtvNdResult? bn = null;
+                if (s.NondetectCount > 0)
+                {
+                    try
+                    {
+                        bn = BtvWithNd.Compute(s.Observations, cc, coverage, k);
+                        var ndSec = sheet.AddSection("btvs accounting for nondetects (KM estimates)");
+                        ndSec.ColumnsAre("limit", "value", "reference");
+                        ndSec.AddRow("KM mean / sd", F(bn.KmMean), "TG eq. 4-1..4-3");
+                        ndSec.AddRow($"UPL1 normal-KM", F(bn.UplNormal1), "TG eq. 5-1");
+                        ndSec.AddRow($"UPL{b.FutureK} normal-KM (Bonferroni)", F(bn.UplNormalK), "TG 3.5.5 on KM estimates");
+                        ndSec.AddRow($"UPL{b.FutureK} mean of k, normal-KM", F(bn.UplNormalKMean), "t(1-a) * KM sd * sqrt(1/k + 1/n)");
+                        ndSec.AddRow("UPL1 Chebyshev-KM", F(bn.UplChebyshev), "TG eq. 5-2; conservative");
+                        if (b.LognormalApplicable)
+                        {
+                            ndSec.AddRow("percentile normal-KM", F(bn.PercentileNormal), "TG eq. 5-3");
+                            ndSec.AddRow("percentile lognormal-KM", F(bn.PercentileLognormal), "TG 5.3.2.2");
+                            ndSec.AddRow("UTL95-95 normal-KM", F(bn.UtlNormal), "TG eq. 5-4");
+                            ndSec.AddRow("UTL95-95 lognormal-KM", F(bn.UtlLognormal), "TG 5.3.3.2");
+                        }
+                        if (b.GammaApplicable)
+                        {
+                            ndSec.AddRow("percentile gamma-KM (chi-square)", F(bn.PercentileGammaChi), "TG 5.3.2.3 chi-square route (what ProUCL prints)");
+                            ndSec.AddRow("percentile gamma WH-KM", F(bn.PercentileGammaWh), "WH approximation (cube-root scale)");
+                            ndSec.AddRow("percentile gamma HW-KM", F(bn.PercentileGammaHw), "HW approximation (fourth-root scale)");
+                            ndSec.AddRow("UTL gamma WH-KM", F(bn.UtlGammaWh), "TG 5.3.3.3 (cube-root scale)");
+                            ndSec.AddRow("UTL gamma HW-KM", F(bn.UtlGammaHw), "TG 5.3.3.3 (fourth-root scale)");
+                        }
+                        ndSec.AddRow($"d2max (for USL, n = {bn.N})", F(bn.D2Max), "Singh (1993) max-MD critical, closed form (Grubbs 1950)");
+                        ndSec.AddRow("USL normal-KM", F(bn.UslNormal), "TG 5.3.4.1");
+                        if (bn.LognormalApplicable) ndSec.AddRow("USL lognormal-KM", F(bn.UslLognormal), "TG 5.3.4.2");
+                        if (bn.GammaApplicable)
+                        {
+                            ndSec.AddRow("USL gamma WH-KM", F(bn.UslGammaWh), "TG 5.3.4.3 (cube-root scale)");
+                            ndSec.AddRow("USL gamma HW-KM", F(bn.UslGammaHw), "TG 5.3.4.3 (fourth-root scale)");
+                        }
+                        ndSec.AddRow("USL nonparametric (max)", F(bn.UslNonparametric), "TG 5.3.4.4; use only on outlier-free single populations");
+                        ndSec.AddNote("KM on transformed scale: detects and NDs (at their DL) are all transformed before the KM (TG 5.3.x). " +
+                                      "gamma-KM percentile: chi-square route (TG 5.3.2.3) - ProUCL-consistent within 0.5% (k-hat estimation detail).");
+                    }
+                    catch (ArgumentException ex) { Warn($"BTV-ND: {ex.Message}"); }
+                }
+
+                if (batch is null) Console.Write(sheet.RenderText());
+                else batch.WriteSheet(s.PointId, s.Parameter, sheet.RenderText());
+
+                if (batch is not null)
+                {
+                    var st = Descriptive.Compute(values);
+                    string ndPct = s.N > 0 ? (100.0 * s.NondetectCount / s.N).ToString("G4", CultureInfo.InvariantCulture) : "0";
+                    batch.AddRow(s.PointId, s.Parameter, s.N.ToString(CultureInfo.InvariantCulture),
+                        s.NondetectCount.ToString(CultureInfo.InvariantCulture), ndPct,
+                        BatchRun.Num(st.Min), BatchRun.Num(st.Max), BatchRun.Num(st.Median),
+                        BatchRun.Num(st.Mean), BatchRun.Num(st.StandardDeviation),
+                        BatchRun.Num(bn?.KmMean), BatchRun.Num(bn?.KmSd),
+                        BatchRun.Num(b.UplNormal1), BatchRun.Num(b.UtlNormal), BatchRun.Num(b.UslNormal),
+                        BatchRun.Num(b.UtlAchievedCC), WarningsCell());
+                }
             }
-
-            if (batch is null) Console.Write(sheet.RenderText());
-            else batch.WriteSheet(s.PointId, s.Parameter, sheet.RenderText());
-
-            if (batch is not null)
+            catch (Exception ex) when (ex is ArgumentException or ArithmeticException or InvalidOperationException)
             {
-                var st = Descriptive.Compute(values);
-                string ndPct = s.N > 0 ? (100.0 * s.NondetectCount / s.N).ToString("G4", CultureInfo.InvariantCulture) : "0";
-                batch.AddRow(s.PointId, s.Parameter, s.N.ToString(CultureInfo.InvariantCulture),
-                    s.NondetectCount.ToString(CultureInfo.InvariantCulture), ndPct,
-                    BatchRun.Num(st.Min), BatchRun.Num(st.Max), BatchRun.Num(st.Median),
-                    BatchRun.Num(st.Mean), BatchRun.Num(st.StandardDeviation),
-                    BatchRun.Num(bn?.KmMean), BatchRun.Num(bn?.KmSd),
-                    BatchRun.Num(b.UplNormal1), BatchRun.Num(b.UtlNormal), BatchRun.Num(b.UslNormal),
-                    BatchRun.Num(b.UtlAchievedCC), WarningsCell());
+                Warn($"series skipped: {ex.Message}");
+                batch?.AddFailureRow(WarningsCell(), s.PointId, s.Parameter, s.N.ToString(CultureInfo.InvariantCulture),
+                    s.NondetectCount.ToString(CultureInfo.InvariantCulture),
+                    s.N > 0 ? (100.0 * s.NondetectCount / s.N).ToString("G4", CultureInfo.InvariantCulture) : "0");
+                continue;
             }
             series++;
         }

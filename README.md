@@ -31,7 +31,8 @@ built automatically by CI for all three operating systems.
 > The GUI download is a graphical shell under development
 > (roadmap Phase 4 — reporting & desktop GUI): it opens data files
 > (packed and ProUCL-style long layout), previews them in a data grid
-> and computes outlier sheets — the analysis modules are being added.
+> and computes outlier sheets on long-layout files without nondetects —
+> nondetect designation and the other analysis modules are being added.
 
 | OS | CLI — the working interface (batch) | GUI — shell in development | Notes |
 |---|---|---|---|
@@ -60,6 +61,14 @@ openucl ndstats wells.csv                 # Kaplan-Meier, ROS, DL/2 with nondete
 
 Older releases and changelogs: [Releases](https://github.com/fanellomiramare/OpenUCL/releases).
 
+> [!NOTE]
+> **v0.16.0 changes some results.** The UCL recommendation now follows the
+> ProUCL 5.2 decision flowcharts (Technical Guide, Appendix C), the adjusted
+> gamma UCL is computed only where ProUCL defines it, and the bootstrap
+> generator is now the standard xoshiro256** — bootstrap UCLs move within
+> seed noise. Details and before/after values in the
+> [v0.16.0 release notes](https://github.com/fanellomiramare/OpenUCL/releases/tag/v0.16.0).
+
 ---
 
 ## Why OpenUCL
@@ -78,15 +87,17 @@ Older releases and changelogs: [Releases](https://github.com/fanellomiramare/Ope
 
 Where ProUCL relies on tabulated or approximated critical values, OpenUCL
 computes them exactly. Within the range covered by ProUCL's tables the two
-agree to display precision; outside that range, OpenUCL remains exact. Every
-row below is golden-locked against live ProUCL 5.2 output at Full Precision
-(seven decimals), verification campaigns of November 2026.
+agree to display precision; outside that range, OpenUCL remains exact. The
+Land, tolerance-factor, Shapiro-Wilk and percentile rows are golden-locked
+against live ProUCL 5.2 output at Full Precision (seven decimals),
+verification campaigns of November 2026; the Dixon row is checked against
+the published tables.
 
 | Method | ProUCL 5.2 | OpenUCL |
 |---|---|---|
 | Land's H-UCL | H interpolated from Land's (1975) tables; 90% and 95% levels only (+3.6% vs exact at n = 55, +5.3% at n = 56) | exact H for any sample size and confidence level (conditional-t polar integration) |
 | UTL tolerance factor K | tabulated for n ≤ 30 (2.309 vs exact 2.30929 at n = 24), Natrella approximation beyond (−0.28% vs exact at n = 56) | exact noncentral-t K for any n, confidence level and coverage — no table/approximation switch |
-| Dixon outlier test | tabulated critical values (TG Appendix A) | exact critical values by integration of order-statistic ratios (n ≤ 25, any α) |
+| Dixon outlier test | tabulated critical values (historical tables, e.g. Gilbert 1987) | exact critical values by integration of order-statistic ratios (n ≤ 25, any α) |
 | Shapiro-Wilk W | variant deviating from the published AS R94 algorithm (silver n = 56: 0.2058465 vs canonical 0.1835390; conclusions agree at sheet significance levels) | canonical AS R94 — verified identical to R 4.6.2 and scipy at 7 decimals on 5 data sets (W and p-values) |
 | Nonparametric percentile | Excel PERCENTILE.INC convention — while the TG's own worked example contradicts the TG text (it uses p·n) | same Excel convention as ProUCL, with the TG discrepancy documented |
 
@@ -100,8 +111,15 @@ sets and run in full on every machine and in CI):
 - **Goodness of fit** — Shapiro-Wilk (Royston AS R94), Lilliefors K-S; gamma
   Anderson-Darling and K-S with the Singh, Singh & Iaci critical values
 - **UCLs/EPCs** — Student's t, modified-t, jackknife, CLT, adjusted CLT, Chebyshev,
-  approximate and adjusted gamma, bootstrap (standard, percentile, BCA, bootstrap-t),
-  with and without nondetects (KM, LROS, GROS), with ProUCL 5.2 recommendation logic
+  approximate and adjusted gamma, bootstrap (standard, percentile, BCA, bootstrap-t;
+  seeded xoshiro256**, seed printed on every sheet), with and without nondetects
+  (KM, KM-gamma, KM H-UCL, LROS, GROS)
+- **UCL recommendation** — the ProUCL 5.2 decision flowcharts (Technical Guide,
+  Appendix C): goodness of fit at the flowchart levels (normal 1%, gamma 5%,
+  lognormal 10%), then the suggested 95% UCL by distribution, sample size and
+  skewness; the reasoning is printed on the sheet. Matched on live ProUCL 5.2
+  sheets for data sets without nondetects; the branches with nondetects follow
+  the flowcharts and are being confirmed on live runs
 - **Background values (BTVs)** — upper percentiles, UPL1/UPLk/UPLk-mean, UTL 95-95
   (exact noncentral-t tolerance factor), USLs for full and censored data sets
   (normal, lognormal, gamma WH/HW), nonparametric limits with achieved confidence
@@ -109,7 +127,9 @@ sets and run in full on every machine and in CI):
   Oahu example), robust ROS (LROS/GROS) with Helsel-Cohn plotting positions, DL/2
 - **Batch output** — `-o` folder mode on every analysis module: per-series sheets,
   summary CSV and Excel (XLSX) with a run-info header; `--bundle` writes one
-  combined file ([walkthrough](docs/format-packed.md#a-complete-batch-example))
+  combined file ([walkthrough](docs/format-packed.md#a-complete-batch-example)).
+  A series that cannot be analysed (e.g. all values identical) gets a summary
+  row with the reason and the batch goes on
 - **Outlier tests** — Dixon (n ≤ 25) and Rosner (n ≥ 25)
 - **One-sample hypothesis tests** — Student's t, exact sign test, exact
   Wilcoxon signed-rank
@@ -128,14 +148,14 @@ sets and run in full on every machine and in CI):
 |---|---|---|---|
 | 1 | Data engine | packed format, ProUCL-compatible long layout, CSV/XLSX/XLS | ✅ v0.2–v0.7 |
 | 1 | Descriptive stats & GOF | normal/lognormal/gamma, Shapiro-Wilk, Lilliefors, A-D | ✅ v0.2 |
-| 2 | UCLs/EPCs | t, modified-t, CLT, gamma, bootstrap, KM, ROS, Land, Hall | ✅ v0.5–v0.12 |
+| 2 | UCLs/EPCs | t, modified-t, CLT, gamma, bootstrap, KM, ROS, Land, Hall; ProUCL 5.2 recommendation flowcharts | ✅ v0.5–v0.16 |
 | 2 | Background values | percentiles, UPL1/UPLk, UTL 95-95, USL, KM-based with NDs | ✅ v0.7–v0.10 |
 | 2 | Parametric USLs | d2max critical values, USL with nondetects | ✅ v0.14 |
 | 3 | Outlier tests | Dixon (exact critical values), Rosner | ✅ v0.8 |
 | 3 | Hypothesis tests | one- & two-sample, with nondetects, ANOVA/Kruskal-Wallis, trend | ✅ v0.8–v0.10 |
 | 3 | Historical methods | MVUE, Chebyshev (MVUE), Hall's bootstrap, Land's exact H-UCL | ✅ v0.11–v0.12 |
 | 4 | Batch output & reports (CLI) | per-series sheets, summary tables (CSV + XLSX), bundle mode, output folders | ✅ v0.15.1–v0.15.3 |
-| 4 | Desktop GUI | document model, file loading, data grid, outlier module | 🔄 started (v0.15.2–v0.15.3) |
+| 4 | Desktop GUI | document model, file loading, data grid, outlier module | 🔄 started (v0.16.0) |
 | 5 | Graphs | Q-Q plots, box plots, histograms, time series | ⬜ planned |
 | 6 | Validation campaign → 1.0.0-beta | 28 ProUCL reference data sets, side-by-side comparison | ⬜ planned |
 

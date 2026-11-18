@@ -23,12 +23,28 @@ public sealed record UclWithNdResult
     public double KmPercentileBootstrap { get; init; }
     public double KmBcaBootstrap { get; init; }
 
+    // Gamma on KM estimates (TG 4.6.2, Table 4-4): k-hat(KM) = KM mean² / KM
+    // variance — not bias corrected, ProUCL prints "k hat (KM)" — nu = 2 n k,
+    // then eq. 2-34 (approximate) and 2-35 (adjusted, beta of table 2-2).
+    public double KmGammaK { get; init; } = double.NaN;
+    public double KmGammaNu { get; init; } = double.NaN;
+    public double KmGammaApproximate { get; init; } = double.NaN;  // ProUCL: "use when n>=50"
+    public double KmGammaAdjusted { get; init; } = double.NaN;     // ProUCL: "use when n<50"
+
+    // Lognormal on KM estimates of the logged data (TG 4.6.3, EPA 2009 RCRA):
+    // KM mean/sd of ln(x) — detects and NDs at their DL all logged — in the
+    // H-UCL equation (TG eq. 2-36), H exact (Land 1975).
+    public double KmLogMean { get; init; } = double.NaN;
+    public double KmLogSd { get; init; } = double.NaN;
+    public double KmH { get; init; } = double.NaN;
+    public double KmHUcl { get; init; } = double.NaN;
+
     // ROS-based (full UCL suite on the imputed data set)
     public double LrosT { get; init; }
     public double LrosPercentileBootstrap { get; init; }
     public double GrosT { get; init; }
-    public double GrosGammaAdjusted { get; init; }   // gamma adjusted UCL on GROS data (n<=50)
-    public double GrosGammaApproximate { get; init; }
+    public double GrosGammaAdjusted { get; init; } = double.NaN;     // gamma adjusted UCL on GROS data
+    public double GrosGammaApproximate { get; init; } = double.NaN;
 }
 
 public static class UclWithNd
@@ -78,8 +94,19 @@ public static class UclWithNd
         var kmSes = new double[bootstrapRuns];   // bootstrap-t: KM SE of each resample
         for (int b = 0; b < bootstrapRuns; b++)
         {
-            var sample = new ValueObservation[n];
-            for (int i = 0; i < n; i++) sample[i] = pool[rng.NextIndex(n)];
+            // A resample made only of NDs has no KM estimate (TG 4.7.1: the number
+            // of NDs per resample ranges 0..n). It is redrawn — with >= 2 detects in
+            // the pool P(all ND) <= ((n-2)/n)^n < e^-2, so the loop ends fast. Before
+            // decision #85 one such resample threw and dropped every ND-aware UCL of
+            // the series (small n with many NDs: e.g. 2 NDs of 6 -> ~2.7 per 2000 runs).
+            ValueObservation[] sample;
+            int attempts = 0;
+            do
+            {
+                sample = new ValueObservation[n];
+                for (int i = 0; i < n; i++) sample[i] = pool[rng.NextIndex(n)];
+            }
+            while (sample.All(o => o.IsNondetect) && ++attempts < 10_000);
             var kmR = Censored.KaplanMeier(sample);
             kmMeans[b] = kmR.Mean;
             kmSes[b] = kmR.StandardErrorOfMean;
@@ -129,6 +156,48 @@ public static class UclWithNd
             KmPercentileBootstrap = Ordered(kmMeans, 1.0 - alpha),
             KmBcaBootstrap = Ordered(kmMeans, Math.Clamp(alpha2, 1.0 / bootstrapRuns, 1.0 - 1.0 / bootstrapRuns)),
         };
+
+        // Gamma UCLs on KM estimates (TG 4.6.2; Oahu Table 4-4: k-hat(KM) 1.771,
+        // nu 85.02, approximate 1.246, adjusted 1.27). The KM method does not
+        // need positive data: the requirement is a positive k (TG note in 4.6.2).
+        if (km.Mean > 0 && km.Sd > 0)
+        {
+            double kKm = km.Mean * km.Mean / (km.Sd * km.Sd);
+            double nuKm = 2.0 * n * kKm;
+            double approx = nuKm * km.Mean / GammaDistribution.Quantile(alpha, nuKm / 2.0, 2.0);
+            double beta = Ucl.AdjustedSignificance(alpha, n);
+            double adjusted = beta > 0
+                ? nuKm * km.Mean / GammaDistribution.Quantile(beta, nuKm / 2.0, 2.0)
+                : double.NaN;
+            result = result with
+            {
+                KmGammaK = kKm, KmGammaNu = nuKm,
+                KmGammaApproximate = approx, KmGammaAdjusted = adjusted,
+            };
+        }
+
+        // H-UCL on KM estimates of the logged data (TG 4.6.3; Oahu Table 4-4:
+        // KM sd (logged) 0.547, H 2.023, H-UCL 1.155).
+        if (n >= 4 && observations.All(o => o.Value > 0))
+        {
+            var kmLog = BtvWithNd.KmTransformed(observations, Math.Log);
+            if (!double.IsNaN(kmLog.Mean) && kmLog.Sd > 0)
+            {
+                try
+                {
+                    double h = LandExact.LandCriticalH(n, kmLog.Sd, cc);
+                    result = result with
+                    {
+                        KmLogMean = kmLog.Mean, KmLogSd = kmLog.Sd, KmH = h,
+                        KmHUcl = Math.Exp(kmLog.Mean + kmLog.Sd * kmLog.Sd / 2.0 + h * kmLog.Sd / Math.Sqrt(n - 1.0)),
+                    };
+                }
+                catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
+                {
+                    result = result with { KmLogMean = kmLog.Mean, KmLogSd = kmLog.Sd };
+                }
+            }
+        }
 
         // ROS-based UCLs: the full uncensored suite on the imputed data sets.
         try

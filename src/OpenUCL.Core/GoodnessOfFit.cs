@@ -42,18 +42,32 @@ public sealed record LillieforsResult(int N, double D)
     /// for alpha = 0.01, 0.05, 0.10, 0.20.
     /// NOTE: for n &lt;= 50 ProUCL uses the exact Molin-Abdi table (Salkind 2007), which is
     /// not yet integrated here; for such samples this value is an approximation.
+    /// Any other alpha uses the factor of <see cref="TabulatedAlpha"/>.
     /// </summary>
     public double CriticalValue(double alpha)
     {
-        double factor = alpha switch
+        double factor = TabulatedAlpha(alpha) switch
         {
-            <= 0.01 => 1.035,
-            <= 0.05 => 0.895,
-            <= 0.10 => 0.819,
+            0.01 => 1.035,
+            0.05 => 0.895,
+            0.10 => 0.819,
             _ => 0.741,
         };
         return factor / ((0.83 + N) / Math.Sqrt(N) - 0.01);
     }
+
+    /// <summary>
+    /// The tabulated level (0.01, 0.05, 0.10, 0.20) whose factor
+    /// <see cref="CriticalValue"/> uses for the requested alpha. The comparison
+    /// tolerates the 1 - cc rounding: 1 - 0.95 = 0.050000000000000044 must select
+    /// the 0.05 factor (before decision #83 the ucl sheet used the 0.10 factor at
+    /// 95% and the 0.05 factor at 99%).
+    /// </summary>
+    public static double TabulatedAlpha(double alpha) =>
+        alpha <= 0.01 + 1e-9 ? 0.01
+        : alpha <= 0.05 + 1e-9 ? 0.05
+        : alpha <= 0.10 + 1e-9 ? 0.10
+        : 0.20;
 }
 
 /// <summary>Combined ProUCL-style conclusion for normality/lognormality of one sample.</summary>
@@ -67,6 +81,13 @@ public enum GofConclusion
 public static class GoodnessOfFit
 {
     /// <summary>
+    /// Largest sample on which ProUCL performs the Shapiro-Wilk test (TG 5.2
+    /// §2.2.1.2: "ProUCL performs this test for samples of size up to 2000");
+    /// larger samples are judged by the Lilliefors test alone.
+    /// </summary>
+    public const int ShapiroWilkProUclMaxN = 2000;
+
+    /// <summary>
     /// Shapiro-Wilk test of normality following Royston (1995), algorithm AS R94,
     /// valid for n from 3 to 5000 (ProUCL applies it for n &lt;= 2000).
     /// </summary>
@@ -78,6 +99,9 @@ public static class GoodnessOfFit
 
         double[] x = data.ToArray();
         Array.Sort(x);
+        // AS R94 / R swilk ifault 6: the statistic is undefined on a zero range.
+        if (!(x[n - 1] - x[0] > 1e-19))
+            throw new ArgumentException("Shapiro-Wilk is not defined when all values are identical.", nameof(data));
         double mean = 0;
         foreach (double v in x) mean += v;
         mean /= n;
@@ -219,12 +243,14 @@ public static class GoodnessOfFit
     /// <summary>
     /// ProUCL-style combination: the data set is concluded (approximately) normal when at
     /// least one of the two tests accepts normality at the given alpha (ProUCL Technical
-    /// Guide 5.2, section 2.2.1).
+    /// Guide 5.2, section 2.2.1). A null Shapiro-Wilk result (sample above
+    /// <see cref="ShapiroWilkProUclMaxN"/>) leaves the decision to Lilliefors alone.
     /// </summary>
-    public static GofConclusion Conclude(ShapiroWilkResult sw, LillieforsResult lf, double alpha)
+    public static GofConclusion Conclude(ShapiroWilkResult? sw, LillieforsResult lf, double alpha)
     {
-        bool swPass = sw.W >= sw.CriticalValue(alpha);
         bool lfPass = lf.D <= lf.CriticalValue(alpha);
+        if (sw is null) return lfPass ? GofConclusion.Normal : GofConclusion.NotNormal;
+        bool swPass = sw.W >= sw.CriticalValue(alpha);
         return (swPass, lfPass) switch
         {
             (true, true) => GofConclusion.Normal,

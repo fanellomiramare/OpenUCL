@@ -11,10 +11,17 @@ Implementation assistant working under Matteo's direction: statistical engine
 (packed and long layouts, CSV/XLSX/XLS readers), command-line interface,
 CI/CD pipelines, and the test suite.
 
+## Claude (AI coding assistant — Anthropic)
+Project assistant under Matteo's direction since November 2026: audit of the
+code base, corrections to the statistical engine (UCL recommendation logic
+transcribed from the Technical Guide decision flowcharts, adjusted gamma
+significance levels, nondetect UCLs on KM estimates, batch robustness,
+bootstrap generator) and the related tests and documentation.
+
 ---
 
-**A note on AI-assisted development.** OpenUCL is developed with the help of an
-AI coding agent under human direction. Every contribution is committed to the
+**A note on AI-assisted development.** OpenUCL is developed with the help of
+AI coding agents under human direction. Every contribution is committed to the
 public repository where it can be reviewed, tested and audited by anyone. All
 statistical algorithms are implemented from published, citable sources (the
 public-domain ProUCL Technical Guide and peer-reviewed literature), and each

@@ -74,6 +74,10 @@ public static class Btv
         double sumSq = 0;
         foreach (var v in data) { double d = v - mean; sumSq += d * d; }
         double sd = Math.Sqrt(sumSq / (n - 1));
+        if (!(sd > 0))
+            throw new ArgumentException(
+                $"all {n} values are identical ({mean.ToString("G6", System.Globalization.CultureInfo.InvariantCulture)}): " +
+                "upper limits are not defined without variability.", nameof(data));
 
         var sorted = data.ToArray();
         Array.Sort(sorted);
@@ -101,9 +105,16 @@ public static class Btv
 
         bool gammaOk = logOk;
         double kHat = double.NaN, thHat = double.NaN, ppGamma = double.NaN;
+        GammaMLE? gammaFit = null;
         if (gammaOk)
         {
-            var fit = GammaDistribution.FitMLE(data);
+            // near-constant data: the gamma shape may be non-estimable in floating point
+            try { gammaFit = GammaDistribution.FitMLE(data); }
+            catch (ArgumentException) { gammaOk = false; }
+        }
+        if (gammaOk && gammaFit is not null)
+        {
+            var fit = gammaFit;
             kHat = fit.KHat; thHat = fit.ThetaHat;
             // TG eq. 3-5 with the BIAS-CORRECTED k*/theta* (not the MLE k-hat/theta-hat
             // the TG text mentions): ProUCL 5.2 computes the gamma percentile on k*/theta*

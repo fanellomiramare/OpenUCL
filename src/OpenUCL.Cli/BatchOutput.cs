@@ -54,6 +54,20 @@ internal sealed class BatchRun
     }
 
     /// <summary>
+    /// Adds the summary row of a series whose sheet was not produced (skipped or
+    /// failed): the identifying leading cells, empty statistics and the reason in
+    /// the trailing "warnings" column — the batch goes on with the next series.
+    /// </summary>
+    public void AddFailureRow(string warningsCell, params string[] leading)
+    {
+        if (_header is null) throw new InvalidOperationException("SetHeader before AddFailureRow");
+        var row = new string[_header.Length];
+        for (int i = 0; i < row.Length - 1; i++) row[i] = i < leading.Length ? leading[i] : "";
+        row[^1] = warningsCell;
+        _rows.Add(row);
+    }
+
+    /// <summary>
     /// Writes one series sheet: a separate sanitized file, or an append to the
     /// combined bundle file. Returns the path written.
     /// </summary>

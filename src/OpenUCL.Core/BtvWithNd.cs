@@ -164,7 +164,7 @@ public static class BtvWithNd
     /// (NDs carry their DL) is transformed; the ND flags are preserved
     /// (TG 5.3.x: "all detects and NDs are transformed to y-space").
     /// </summary>
-    private static KmEstimates KmTransformed(IReadOnlyList<ValueObservation> observations,
+    internal static KmEstimates KmTransformed(IReadOnlyList<ValueObservation> observations,
         Func<double, double> transform)
     {
         var transformed = observations.Select(o => transform(o.Value)).ToArray();

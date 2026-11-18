@@ -35,6 +35,9 @@ size is effectively bounded only by disk space (and each single series must fit 
   (nondetects), and the footer reads "nondetects included in N; stats on detected
   values only".
 - Decimal separator: `.` by default; `,` accepted when the value separator is not `,`.
+  With decimal commas, set the value separator explicitly (`--value-sep ';'` or
+  `--value-sep '|'`): the auto-detection counts characters and would take the
+  decimal commas for separators (`1,2;0,8;2,1` → error on `2;0`).
 
 ## Example (semicolon-separated CSV, packed)
 
